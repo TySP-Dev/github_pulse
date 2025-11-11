@@ -19,8 +19,8 @@ This tool automates the process of converting Azure DevOps work items into GitHu
 1. **Clone/Download the Repository**
 
    ```bash
-   git clone https://github.com/yourusername/github_automation.git
-   cd github_automation
+   git clone https://github.com/TySP-Dev/github_automation.git
+   cd github_automation\application
    ```
 
 2. **Create Virtual Environment** (Recommended)
@@ -46,13 +46,13 @@ This tool automates the process of converting Azure DevOps work items into GitHu
 3. **Install Dependencies**
 
    ```bash
-   pip install -r application/requirements.txt
+   pip install -r requirements.txt
    ```
 
 4. **Run the Application**
 
    ```bash
-   python application/app.py
+   python app.py
    ```
 
 ### Virtual Environment Management
