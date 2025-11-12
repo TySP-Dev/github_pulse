@@ -1,5 +1,5 @@
 """
-GitHub Automation Tool
+GitHub Pulse
 Main application entry point
 
 This application provides GitHub automation workflows with AI assistance.
@@ -27,7 +27,7 @@ class GitHubAutomationApp:
     def __init__(self):
         """Initialize the application"""
         self.root = tk.Tk()
-        self.root.title("GitHub Automation Tool")
+        self.root.title("GitHub Pulse")
         self.root.geometry("1400x1000")
 
         # Initialize core managers
