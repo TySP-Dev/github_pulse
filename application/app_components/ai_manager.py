@@ -3271,7 +3271,27 @@ class AIManager:
         self.log(f"⚠️ Missing modules for {provider_name}: {', '.join(missing)}")
         
         return self.install_ai_packages(missing, parent_window)
-    
+
+    async def check_and_install_ai_modules_async(self, provider_name: str, page=None) -> bool:
+        """Async wrapper for check_and_install_ai_modules for Flet integration
+
+        Args:
+            provider_name: AI provider name
+            page: Flet page instance for showing dialogs
+
+        Returns:
+            bool: True if modules are available or successfully installed
+        """
+        import asyncio
+
+        # Run the sync method in a thread pool
+        result = await asyncio.to_thread(
+            self.check_and_install_ai_modules,
+            provider_name,
+            page
+        )
+        return result
+
     def show_ai_modules_info(self, provider_name: str, parent_window=None) -> None:
         """Show detailed AI modules information"""
         try:

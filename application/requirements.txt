@@ -1,5 +1,9 @@
 # Core dependencies
 requests>=2.31.0
+keyring>=24.0.0  # Secure credential storage
+
+# UI Framework
+flet>=0.23.0
 
 # AI providers (optional - installed automatically when needed)
 anthropic>=0.18.0  # Claude AI

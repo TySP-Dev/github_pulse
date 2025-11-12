@@ -208,3 +208,6 @@ __marimo__/
 
 # AI Files
 .claude/
+
+# Settings files
+config.json

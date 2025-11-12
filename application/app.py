@@ -6,8 +6,10 @@ This application provides GitHub automation workflows with AI assistance.
 """
 
 import sys
-import tkinter as tk
-from tkinter import messagebox
+import flet as ft
+# Compatibility fix for Flet 0.28+ (Icons vs icons, Colors vs colors)
+ft.icons = ft.Icons
+ft.colors = ft.Colors
 
 # Import our modular components
 try:
@@ -24,11 +26,26 @@ except ImportError as e:
 class GitHubAutomationApp:
     """Main application class that orchestrates all components"""
 
-    def __init__(self):
+    def __init__(self, page: ft.Page):
         """Initialize the application"""
-        self.root = tk.Tk()
-        self.root.title("GitHub Pulse")
-        self.root.geometry("1400x1000")
+        self.page = page
+
+        # Configure page
+        self.page.title = "GitHub Pulse"
+        self.page.theme_mode = ft.ThemeMode.DARK
+        self.page.padding = 0
+
+        # Set window size
+        self.page.window_width = 1400
+        self.page.window_height = 1000
+        self.page.window_min_width = 1200
+        self.page.window_min_height = 800
+
+        # Material Design 3 theme
+        self.page.theme = ft.Theme(
+            color_scheme_seed="blue",
+            use_material3=True,
+        )
 
         # Initialize core managers
         self.config_manager = ConfigManager()
@@ -41,20 +58,30 @@ class GitHubAutomationApp:
         dry_run_config = self.config.get('DRY_RUN', 'false')
         self.dry_run_enabled = str(dry_run_config).lower() in ('true', '1', 'yes', 'on')
 
+        # Register listener for live settings updates
+        self.config_manager.register_listener(self._on_setting_changed)
+
         # Initialize main GUI
         self.main_gui = MainGUI(
-            root=self.root,
+            page=self.page,
             config_manager=self.config_manager,
             ai_manager=self.ai_manager,
             app=self
         )
 
-        # Set up AI provider check after GUI is ready
-        self.root.after(100, self._check_ai_provider_setup)
+        # Build UI
+        self.page.add(self.main_gui.build())
 
-    def _check_ai_provider_setup(self):
+        # Check AI provider setup after a short delay
+        self.page.run_task(self._check_ai_provider_setup_async)
+
+    async def _check_ai_provider_setup_async(self):
         """Check and setup AI providers after GUI initialization"""
         try:
+            # Wait a bit for GUI to fully load
+            import asyncio
+            await asyncio.sleep(0.5)
+
             ai_provider = self.config.get('AI_PROVIDER', '').strip().lower()
 
             if not ai_provider or ai_provider in ['none', '']:
@@ -64,7 +91,7 @@ class GitHubAutomationApp:
                 return  # Unknown provider
 
             # Check if modules are available and offer installation if needed
-            self.ai_manager.check_and_install_ai_modules(ai_provider, self.root)
+            await self.ai_manager.check_and_install_ai_modules_async(ai_provider, self.page)
 
         except Exception as e:
             print(f"Error checking AI provider setup: {e}")
@@ -98,26 +125,63 @@ class GitHubAutomationApp:
         logger = self.main_gui.logger if hasattr(self.main_gui, 'logger') else None
         return GitHubAPI(token, logger, dry_run)
 
-    def run(self):
-        """Start the application"""
-        try:
-            self.root.mainloop()
-        except KeyboardInterrupt:
-            print("Application interrupted by user")
-        except Exception as e:
-            messagebox.showerror("Application Error", f"An unexpected error occurred:\n{str(e)}")
-            print(f"Application error: {e}")
+    def _on_setting_changed(self, key: str, value: any):
+        """
+        Handle settings changes with live updates (no restart needed!)
+
+        Args:
+            key: Setting key that changed
+            value: New value
+        """
+        print(f"⚡ Setting changed: {key} = {value}")
+
+        # Theme changes - apply immediately
+        if key == 'THEME_MODE':
+            if value == 'dark':
+                self.page.theme_mode = ft.ThemeMode.DARK
+            elif value == 'light':
+                self.page.theme_mode = ft.ThemeMode.LIGHT
+            self.page.update()
+            print(f"✓ Theme updated to {value}")
+
+        # Dry run mode changes
+        elif key == 'DRY_RUN':
+            self.dry_run_enabled = str(value).lower() in ('true', '1', 'yes', 'on')
+            print(f"✓ Dry run mode: {self.dry_run_enabled}")
+
+        # GitHub token changes - reinitialize API
+        elif key == 'GITHUB_PAT':
+            if hasattr(self, 'main_gui') and self.main_gui:
+                print("✓ GitHub token updated - API will be reinitialized on next use")
+
+        # AI provider changes
+        elif key == 'AI_PROVIDER':
+            print(f"✓ AI provider changed to: {value}")
+            # AI manager will use new provider on next request
+
+        # Update internal config
+        self.config[key] = value
 
 
-def main():
-    """Main entry point"""
+async def main(page: ft.Page):
+    """Main entry point for Flet application"""
     try:
-        app = GitHubAutomationApp()
-        app.run()
+        app = GitHubAutomationApp(page)
     except Exception as e:
+        # Show error as a simple text on the page since dialog can't open before page init
         print(f"Failed to start application: {e}")
-        sys.exit(1)
+        import traceback
+        traceback.print_exc()
+
+        # Add error message to page
+        error_text = ft.Text(
+            f"Application Error:\n\n{str(e)}\n\nPlease check the console for details.",
+            color="red",
+            size=16,
+        )
+        page.add(error_text)
 
 
 if __name__ == "__main__":
-    main()
+    # Run the Flet app
+    ft.app(target=main)
