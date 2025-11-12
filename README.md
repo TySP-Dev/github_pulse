@@ -1,4 +1,4 @@
-# GitHub Automation Tool
+# GitHub Pulse
 
 A Python-based GUI application for GitHub automation workflows.
 
