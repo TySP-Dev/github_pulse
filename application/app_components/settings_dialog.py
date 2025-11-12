@@ -5,6 +5,7 @@ GUI for configuring application settings
 
 import tkinter as tk
 import threading
+import subprocess
 from tkinter import ttk, messagebox, scrolledtext
 from typing import Dict, Any, Optional
 import sys
@@ -46,7 +47,7 @@ class SettingsDialog:
         # Create tabs
         self._create_general_tab(notebook)
         self._create_ai_tab(notebook)
-        self._create_dataverse_tab(notebook)
+        # Removed: self._create_dataverse_tab(notebook) - Azure DevOps/Dataverse specific
         
         # Buttons frame
         buttons_frame = ttk.Frame(main_frame)
@@ -83,17 +84,10 @@ class SettingsDialog:
         scrollable_frame.columnconfigure(1, weight=1)
         
         current_row = 0
-        
-        # Azure DevOps section
-        self._create_section_header(scrollable_frame, current_row, "🔷 Azure DevOps Configuration")
-        current_row += 1
-        
-        self._create_label_entry(scrollable_frame, current_row, "Query URL:", 'AZURE_DEVOPS_QUERY', width=60, multiline=True)
-        current_row += 1
-        
-        self._create_label_entry(scrollable_frame, current_row, "Personal Access Token:", 'AZURE_DEVOPS_PAT', password=True, width=60)
-        current_row += 1
-        
+
+        # REMOVED: Azure DevOps Configuration section
+        # This was specific to Azure DevOps integration
+
         # GitHub section
         self._create_section_header(scrollable_frame, current_row, "🐙 GitHub Configuration")
         current_row += 1
@@ -101,9 +95,9 @@ class SettingsDialog:
         self._create_label_entry(scrollable_frame, current_row, "Personal Access Token:", 'GITHUB_PAT', password=True, width=60)
         current_row += 1
         
-        self._create_label_entry(scrollable_frame, current_row, "Target Repository (owner/repo):", 'GITHUB_REPO', width=60)
+        self._create_target_repo_dropdown(scrollable_frame, current_row)
         current_row += 1
-        
+
         self._create_forked_repo_dropdown(scrollable_frame, current_row)
         current_row += 1
         
@@ -148,14 +142,13 @@ class SettingsDialog:
 
         # Help text
         help_text = ttk.Label(scrollable_frame, text="💡 Getting Started:\n"
-                             "1. Set your Azure DevOps Query URL (copy from browser)\n"
-                             "2. Create Personal Access Tokens for both services\n"
-                             "3. Configure GitHub repositories:\n"
+                             "1. Create a GitHub Personal Access Token\n"
+                             "2. Configure GitHub repositories:\n"
                              "   • Target Repository: Where PRs will be created\n"
                              "   • Forked Repository: Your fork where changes are made\n"
-                             "4. Set Local Repo Path for automatic repository detection\n"
-                             "5. Configure AI provider in the AI tab (optional)\n"
-                             "6. Test your connection before processing items",
+                             "3. Set Local Repo Path for automatic repository detection\n"
+                             "4. Configure AI provider in the AI tab (optional)\n"
+                             "5. Test your connection before processing items",
                              font=('Arial', 9), foreground='blue', justify=tk.LEFT, wraplength=850)
         help_text.grid(row=current_row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(20, 30), padx=10)
 
@@ -193,7 +186,7 @@ class SettingsDialog:
         
         self.ai_provider_var = tk.StringVar(value=self.config.get('AI_PROVIDER', 'none'))
         provider_dropdown = ttk.Combobox(scrollable_frame, textvariable=self.ai_provider_var,
-                                       values=['none', 'claude', 'chatgpt', 'github-copilot'], state='readonly', width=47)
+                                       values=['none', 'claude', 'chatgpt', 'github-copilot', 'ollama'], state='readonly', width=47)
         provider_dropdown.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=10)
         self.entries['AI_PROVIDER'] = self.ai_provider_var
         
@@ -202,6 +195,13 @@ class SettingsDialog:
         self._create_label_entry(scrollable_frame, 3, "ChatGPT API Key:", 'OPENAI_API_KEY', password=True)
         self._create_label_entry(scrollable_frame, 4, "GitHub Token (for Copilot) [defaults to GitHub PAT]:", 'GITHUB_TOKEN', password=True)
 
+        # Ollama Configuration
+        self._create_label_entry(scrollable_frame, 5, "Ollama Server URL:", 'OLLAMA_URL')
+        self._create_label_entry(scrollable_frame, 6, "Ollama API Key (optional):", 'OLLAMA_API_KEY', password=True)
+
+        # Ollama Model Dropdown
+        self._create_ollama_model_dropdown(scrollable_frame, 7)
+
         # Help text
         help_text = ttk.Label(scrollable_frame, text="\n💡 Tips:\n"
                              "• Provider: Choose 'none' to disable AI (uses Copilot workflow)\n"
@@ -209,58 +209,21 @@ class SettingsDialog:
                              "• ChatGPT: Get key at platform.openai.com/api-keys\n"
                              "• GitHub Copilot: Uses GitHub Models API (requires GitHub token)\n"
                              "• GitHub Token: Auto-defaults to GitHub PAT if left empty\n"
-                             "• Cost: ~$0.01-0.05 per PR with AI, free with 'none'\n"
+                             "• Ollama: Self-hosted AI (requires Ollama server running)\n"
+                             "• Cost: ~$0.01-0.05 per PR with AI, free with 'none' and Ollama\n"
                              "• AI providers clone repos locally to make changes before pushing",
                              font=('Arial', 9), foreground='blue', justify=tk.LEFT, wraplength=800)
-        help_text.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20, padx=10)
+        help_text.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20, padx=10)
         
         # Pack canvas and scrollbar
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
     
-    def _create_dataverse_tab(self, notebook):
-        """Create Dataverse/PowerApp settings tab"""
-        dataverse_frame = ttk.Frame(notebook)
-        notebook.add(dataverse_frame, text="UUF/Dataverse")
-        
-        # Scrollable frame
-        canvas = tk.Canvas(dataverse_frame)
-        scrollbar = ttk.Scrollbar(dataverse_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Dataverse section
-        self._create_section_header(scrollable_frame, 0, "📊 PowerApp/Dataverse Configuration")
-        self._create_label_entry(scrollable_frame, 1, "Environment URL:", 'DATAVERSE_ENVIRONMENT_URL', width=60, multiline=True)
-        self._create_label_entry(scrollable_frame, 2, "Table Name:", 'DATAVERSE_TABLE_NAME')
-        
-        # Azure AD section
-        self._create_section_header(scrollable_frame, 3, "🔐 Azure AD Configuration")
-        self._create_label_entry(scrollable_frame, 4, "Client ID:", 'AZURE_AD_CLIENT_ID', width=60)
-        self._create_label_entry(scrollable_frame, 5, "Client Secret:", 'AZURE_AD_CLIENT_SECRET', password=True, width=60)
-        self._create_label_entry(scrollable_frame, 6, "Tenant ID:", 'AZURE_AD_TENANT_ID', width=60)
-        
-        # Help text
-        help_text = ttk.Label(scrollable_frame, text="\n💡 UUF Integration:\n"
-                             "• This section is only needed if you want to fetch UUF items\n"
-                             "• UUF items are processed differently than Azure DevOps work items\n"
-                             "• Environment URL: Your Dataverse environment\n"
-                             "• Azure AD app must have appropriate permissions\n"
-                             "• Contact your PowerApp administrator for these values\n"
-                             "• Leave blank if not using UUF integration",
-                             font=('Arial', 9), foreground='blue', justify=tk.LEFT, wraplength=800)
-        help_text.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20, padx=10)
-        
-        # Pack canvas and scrollbar  
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+    # REMOVED: _create_dataverse_tab method
+    # This was specific to Azure DevOps/Dataverse integration
+    # def _create_dataverse_tab(self, notebook):
+    #     """Create Dataverse/PowerApp settings tab"""
+    #     ...
     
     def _create_section_header(self, parent, row: int, text: str):
         """Create a section header"""
@@ -318,7 +281,49 @@ class SettingsDialog:
         
         self.entries[config_key] = entry
         parent.columnconfigure(1, weight=1)
-    
+
+    def _create_target_repo_dropdown(self, parent, row: int):
+        """Create target repository dropdown with search functionality"""
+        ttk.Label(parent, text="Target Repository:", font=('Arial', 10, 'bold')).grid(
+            row=row, column=0, sticky=tk.W, pady=5, padx=10)
+
+        # Frame for dropdown, search entry, and buttons
+        dropdown_frame = ttk.Frame(parent)
+        dropdown_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=10)
+        dropdown_frame.columnconfigure(0, weight=1)
+
+        # Placeholder for target repos
+        self.target_repos = []
+
+        # Combobox for target repo (searchable)
+        self.target_repo_var = tk.StringVar(value=self.config.get('GITHUB_REPO', ''))
+        self.target_repo_dropdown = ttk.Combobox(dropdown_frame, textvariable=self.target_repo_var,
+                                                 values=[''], width=50)
+        self.target_repo_dropdown.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        self.entries['GITHUB_REPO'] = self.target_repo_var
+
+        # Bind typing event for search
+        self.target_repo_dropdown.bind('<KeyRelease>', self._on_target_repo_search)
+
+        # Refresh button
+        refresh_btn = ttk.Button(dropdown_frame, text="🔄", width=3,
+                               command=self._refresh_target_repos)
+        refresh_btn.grid(row=0, column=1, padx=(0, 2))
+
+        # Search button
+        search_btn = ttk.Button(dropdown_frame, text="🔍", width=3,
+                              command=self._search_target_repos)
+        search_btn.grid(row=0, column=2)
+
+        # Help text for target repo
+        help_label = ttk.Label(parent,
+                             text="  ℹ️ Upstream repo where PRs will be created. Type to search all GitHub repos.",
+                             font=('Arial', 9), foreground='gray')
+        help_label.grid(row=row+1, column=0, columnspan=3, sticky=tk.W, padx=10)
+
+        # Start async loading of user's repos with edit access
+        self.dialog.after(100, self._load_target_repos_async)
+
     def _create_forked_repo_dropdown(self, parent, row: int):
         """Create forked repository dropdown with local repo detection"""
         ttk.Label(parent, text="Forked Repository:", font=('Arial', 10, 'bold')).grid(
@@ -354,10 +359,15 @@ class SettingsDialog:
         self.entries['FORKED_REPO'] = self.forked_repo_var
         
         # Refresh button
-        refresh_btn = ttk.Button(dropdown_frame, text="🔄", width=3, 
+        refresh_btn = ttk.Button(dropdown_frame, text="🔄", width=3,
                                command=self._refresh_forked_repos)
-        refresh_btn.grid(row=0, column=1)
-        
+        refresh_btn.grid(row=0, column=1, padx=(0, 2))
+
+        # Clone button
+        clone_btn = ttk.Button(dropdown_frame, text="📥", width=3,
+                              command=self._clone_forked_repo)
+        clone_btn.grid(row=0, column=2)
+
         # Help text for forked repo
         help_label = ttk.Label(parent, 
                              text="  ℹ️ Your fork where changes will be made. Leave empty to auto-detect from document URL.",
@@ -404,7 +414,128 @@ class SettingsDialog:
                 
             except Exception as e:
                 print(f"Error refreshing local repos: {e}")
-    
+
+    def _clone_forked_repo(self):
+        """Clone the selected forked repository to the local repo path"""
+        # Get selected repository
+        selected_repo = self.forked_repo_var.get().strip()
+
+        # Validate selection
+        if not selected_repo:
+            messagebox.showwarning("No Repository Selected",
+                                 "Please select a repository to clone.")
+            return
+
+        # Check if it's a section header
+        if selected_repo.startswith('---'):
+            messagebox.showwarning("Invalid Selection",
+                                 "Please select a repository, not a section header.")
+            return
+
+        # Get local repo path
+        local_repo_path = self.config.get('LOCAL_REPO_PATH', '').strip()
+        if not local_repo_path:
+            messagebox.showwarning("Local Path Not Configured",
+                                 "Please configure the Local Repository Path in settings first.")
+            return
+
+        # Create directory if it doesn't exist
+        try:
+            os.makedirs(local_repo_path, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Directory Error",
+                               f"Could not create local repository directory:\n{str(e)}")
+            return
+
+        # Extract repo name (handle both "owner/repo" and URLs)
+        repo_name = selected_repo
+        if repo_name.startswith('http'):
+            # Extract from URL
+            parts = repo_name.rstrip('/').split('/')
+            if len(parts) >= 2:
+                repo_name = f"{parts[-2]}/{parts[-1]}"
+            else:
+                messagebox.showerror("Invalid Repository",
+                                   "Could not parse repository name from URL.")
+                return
+
+        # Validate format "owner/repo"
+        if '/' not in repo_name:
+            messagebox.showerror("Invalid Repository",
+                               "Repository must be in 'owner/repo' format.")
+            return
+
+        # Extract just the repo name for the folder
+        folder_name = repo_name.split('/')[-1]
+        target_path = os.path.join(local_repo_path, folder_name)
+
+        # Check if directory already exists
+        if os.path.exists(target_path):
+            response = messagebox.askyesno("Directory Exists",
+                                          f"The directory '{folder_name}' already exists.\n\n"
+                                          f"Do you want to continue anyway?\n"
+                                          f"(This may fail if it's already a git repository)")
+            if not response:
+                return
+
+        # Construct clone URL
+        clone_url = f"https://github.com/{repo_name}.git"
+
+        # Clone in background thread
+        def clone_repo():
+            try:
+                # Run git clone
+                result = subprocess.run(
+                    ['git', 'clone', clone_url, target_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+
+                # Update UI on main thread
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: self._handle_clone_result(result, repo_name, folder_name))
+
+            except subprocess.TimeoutExpired:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: messagebox.showerror(
+                        "Clone Timeout",
+                        f"Cloning {repo_name} timed out after 5 minutes."))
+            except FileNotFoundError:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: messagebox.showerror(
+                        "Git Not Found",
+                        "Git is not installed or not found in PATH.\n\n"
+                        "Please install Git from: https://git-scm.com/downloads"))
+            except Exception as e:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: messagebox.showerror(
+                        "Clone Error",
+                        f"An error occurred while cloning:\n{str(e)}"))
+
+        # Show progress message
+        messagebox.showinfo("Cloning Repository",
+                          f"Cloning {repo_name} to:\n{target_path}\n\n"
+                          f"This may take a few moments...")
+
+        # Start clone in background
+        thread = threading.Thread(target=clone_repo, daemon=True)
+        thread.start()
+
+    def _handle_clone_result(self, result, repo_name: str, folder_name: str):
+        """Handle the result of a git clone operation"""
+        if result.returncode == 0:
+            messagebox.showinfo("Clone Successful",
+                              f"Successfully cloned {repo_name}!\n\n"
+                              f"Location: {folder_name}/")
+            # Refresh the dropdown to show the newly cloned repo
+            self._refresh_forked_repos()
+        else:
+            error_msg = result.stderr if result.stderr else result.stdout
+            messagebox.showerror("Clone Failed",
+                               f"Failed to clone {repo_name}.\n\n"
+                               f"Error:\n{error_msg}")
+
     def _load_user_forks_async(self):
         """Load user's GitHub forks asynchronously"""
         def load_forks():
@@ -412,18 +543,19 @@ class SettingsDialog:
                 github_token = self.config.get('GITHUB_PAT', '')
                 if not github_token:
                     return
-                
-                from .github_api import GitHubGQL
-                github_api = GitHubGQL(github_token, dry_run=False)
-                self.forked_repos = github_api.get_user_forks()
-                
+
+                from .workflow import GitHubRepoFetcher
+                repo_fetcher = GitHubRepoFetcher(github_token)
+                repos = repo_fetcher.fetch_user_repos(repo_type='owner')
+                self.forked_repos = repo_fetcher.get_repo_names(repos)
+
                 # Update dropdown on main thread
                 if hasattr(self, 'dialog') and self.dialog.winfo_exists():
                     self.dialog.after(0, self._update_forked_dropdown)
-                
+
             except Exception as e:
                 print(f"Error loading user forks: {e}")
-        
+
         threading.Thread(target=load_forks, daemon=True).start()
     
     def _update_forked_dropdown(self):
@@ -436,22 +568,247 @@ class SettingsDialog:
                 return
                 
             current_values = list(self.forked_repo_dropdown['values'])
-            
-            # Remove old GitHub forks section if exists
-            if '--- Your GitHub Forks ---' in current_values:
-                start_idx = current_values.index('--- Your GitHub Forks ---')
+
+            # Remove old GitHub repos section if exists
+            if '--- Your GitHub Repos ---' in current_values:
+                start_idx = current_values.index('--- Your GitHub Repos ---')
                 current_values = current_values[:start_idx]
-            
-            # Add GitHub forks section
+
+            # Add GitHub repos section
             if self.forked_repos:
-                current_values.append('--- Your GitHub Forks ---')
+                current_values.append('--- Your GitHub Repos ---')
                 current_values.extend(self.forked_repos)
             
             self.forked_repo_dropdown['values'] = current_values
             
         except Exception as e:
             print(f"Error updating forked dropdown: {e}")
-    
+
+    def _load_target_repos_async(self):
+        """Load target repos (with push/admin access) asynchronously"""
+        def load_repos():
+            try:
+                github_token = self.config.get('GITHUB_PAT', '')
+                if not github_token:
+                    return
+
+                from .workflow import GitHubRepoFetcher
+                repo_fetcher = GitHubRepoFetcher(github_token)
+                repos = repo_fetcher.fetch_repos_with_permissions(min_permission='push')
+                self.target_repos = repo_fetcher.get_repo_names(repos)
+
+                # Update dropdown on main thread
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, self._update_target_dropdown)
+
+            except Exception as e:
+                print(f"Error loading target repos: {e}")
+
+        threading.Thread(target=load_repos, daemon=True).start()
+
+    def _update_target_dropdown(self):
+        """Update the target repository dropdown"""
+        try:
+            if not hasattr(self, 'dialog') or not self.dialog.winfo_exists():
+                return
+            if not hasattr(self, 'target_repo_dropdown') or not self.target_repo_dropdown.winfo_exists():
+                return
+
+            current_values = ['']  # Start with empty option
+
+            # Add user's repos with edit access
+            if self.target_repos:
+                current_values.append('--- Your Repos (with edit access) ---')
+                current_values.extend(self.target_repos)
+
+            self.target_repo_dropdown['values'] = current_values
+
+        except Exception as e:
+            print(f"Error updating target dropdown: {e}")
+
+    def _refresh_target_repos(self):
+        """Refresh target repositories"""
+        self._load_target_repos_async()
+
+    def _search_target_repos(self):
+        """Search for repositories on GitHub"""
+        query = self.target_repo_var.get().strip()
+        if not query:
+            return
+
+        def search_repos():
+            try:
+                github_token = self.config.get('GITHUB_PAT', '')
+                if not github_token:
+                    return
+
+                from .workflow import GitHubRepoFetcher
+                repo_fetcher = GitHubRepoFetcher(github_token)
+                repos = repo_fetcher.search_repositories(query, per_page=50)
+                search_results = repo_fetcher.get_repo_names(repos)
+
+                # Update dropdown on main thread
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: self._update_target_dropdown_with_search(search_results, query))
+
+            except Exception as e:
+                print(f"Error searching repos: {e}")
+
+        threading.Thread(target=search_repos, daemon=True).start()
+
+    def _update_target_dropdown_with_search(self, search_results, query):
+        """Update target dropdown with search results"""
+        try:
+            if not hasattr(self, 'target_repo_dropdown') or not self.target_repo_dropdown.winfo_exists():
+                return
+
+            current_values = ['']
+
+            # Add user's repos
+            if self.target_repos:
+                current_values.append('--- Your Repos (with edit access) ---')
+                current_values.extend(self.target_repos)
+
+            # Add search results
+            if search_results:
+                current_values.append(f'--- Search Results for "{query}" ---')
+                current_values.extend(search_results)
+
+            self.target_repo_dropdown['values'] = current_values
+
+        except Exception as e:
+            print(f"Error updating target dropdown with search: {e}")
+
+    def _on_target_repo_search(self, _event):
+        """Handle typing in target repo field for auto-search"""
+        # Debounce: only search after user stops typing for 500ms
+        if hasattr(self, '_search_timer'):
+            self.dialog.after_cancel(self._search_timer)
+
+        query = self.target_repo_var.get().strip()
+        if len(query) >= 3:  # Only search if at least 3 characters
+            self._search_timer = self.dialog.after(500, self._search_target_repos)
+
+    def _create_ollama_model_dropdown(self, parent, row: int):
+        """Create Ollama model dropdown with scan button"""
+        ttk.Label(parent, text="Ollama Model:", font=('Arial', 10, 'bold')).grid(
+            row=row, column=0, sticky=tk.W, pady=5, padx=10)
+
+        # Frame for dropdown and scan button
+        dropdown_frame = ttk.Frame(parent)
+        dropdown_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=10)
+        dropdown_frame.columnconfigure(0, weight=1)
+
+        # Model dropdown
+        self.ollama_model_var = tk.StringVar(value=self.config.get('OLLAMA_MODEL', ''))
+        self.ollama_model_dropdown = ttk.Combobox(dropdown_frame, textvariable=self.ollama_model_var,
+                                                  values=[''], width=47)
+        self.ollama_model_dropdown.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        self.entries['OLLAMA_MODEL'] = self.ollama_model_var
+
+        # Scan button
+        scan_btn = ttk.Button(dropdown_frame, text="🔍", width=3,
+                             command=self._scan_ollama_models)
+        scan_btn.grid(row=0, column=1)
+
+        # Help text for Ollama model
+        help_label = ttk.Label(parent,
+                             text="  ℹ️ Click 🔍 to scan available models from your Ollama server.",
+                             font=('Arial', 9), foreground='gray')
+        help_label.grid(row=row+1, column=0, columnspan=3, sticky=tk.W, padx=10)
+
+    def _scan_ollama_models(self):
+        """Scan Ollama server for available models"""
+        ollama_url = self.entries.get('OLLAMA_URL').get().strip() if 'OLLAMA_URL' in self.entries else ''
+
+        if not ollama_url:
+            messagebox.showwarning("Ollama URL Required",
+                                 "Please enter the Ollama Server URL first.")
+            return
+
+        # Normalize URL
+        if not ollama_url.startswith('http'):
+            ollama_url = f"http://{ollama_url}"
+
+        # Scan in background thread
+        def scan_models():
+            try:
+                import requests
+
+                # Get API key if provided
+                ollama_api_key = self.entries.get('OLLAMA_API_KEY').get().strip() if 'OLLAMA_API_KEY' in self.entries else ''
+
+                headers = {}
+                if ollama_api_key:
+                    headers['Authorization'] = f'Bearer {ollama_api_key}'
+
+                # Query Ollama API for models
+                response = requests.get(f"{ollama_url}/api/tags", headers=headers, timeout=10)
+                response.raise_for_status()
+
+                data = response.json()
+                models = data.get('models', [])
+                model_names = [model.get('name', '') for model in models if model.get('name')]
+
+                # Update UI on main thread
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: self._update_ollama_models(model_names))
+
+            except requests.exceptions.ConnectionError:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: messagebox.showerror(
+                        "Connection Error",
+                        f"Could not connect to Ollama server at:\n{ollama_url}\n\n"
+                        f"Make sure Ollama is running and the URL is correct."))
+            except requests.exceptions.Timeout:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: messagebox.showerror(
+                        "Timeout",
+                        f"Connection to Ollama server timed out."))
+            except requests.exceptions.HTTPError as e:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    if e.response.status_code == 401:
+                        self.dialog.after(0, lambda: messagebox.showerror(
+                            "Authentication Error",
+                            "Invalid API key. Please check your Ollama API Key."))
+                    else:
+                        self.dialog.after(0, lambda: messagebox.showerror(
+                            "HTTP Error",
+                            f"Error from Ollama server:\n{e}"))
+            except Exception as e:
+                if hasattr(self, 'dialog') and self.dialog.winfo_exists():
+                    self.dialog.after(0, lambda: messagebox.showerror(
+                        "Scan Error",
+                        f"An error occurred while scanning for models:\n{str(e)}"))
+
+        # Start scan in background
+        threading.Thread(target=scan_models, daemon=True).start()
+
+    def _update_ollama_models(self, model_names):
+        """Update the Ollama model dropdown with scanned models"""
+        if not model_names:
+            messagebox.showinfo("No Models Found",
+                              "No models found on the Ollama server.\n\n"
+                              "Use 'ollama pull <model>' to download models.")
+            return
+
+        try:
+            if hasattr(self, 'ollama_model_dropdown') and self.ollama_model_dropdown.winfo_exists():
+                current_value = self.ollama_model_var.get()
+                self.ollama_model_dropdown['values'] = model_names
+
+                # Keep current selection if it's still in the list
+                if current_value not in model_names and model_names:
+                    self.ollama_model_var.set(model_names[0])
+
+                messagebox.showinfo("Models Found",
+                                  f"Found {len(model_names)} model(s):\n\n" +
+                                  "\n".join(f"• {name}" for name in model_names[:10]) +
+                                  (f"\n\n...and {len(model_names) - 10} more" if len(model_names) > 10 else ""))
+
+        except Exception as e:
+            print(f"Error updating Ollama models: {e}")
+
     def _create_dry_run_checkbox(self, parent, row: int):
         """Create dry run checkbox"""
         self.dry_run_var = tk.BooleanVar()
@@ -502,22 +859,9 @@ class SettingsDialog:
         
         results = []
         
-        # Test Azure DevOps
-        if config_values.get('AZURE_DEVOPS_QUERY') and config_values.get('AZURE_DEVOPS_PAT'):
-            try:
-                # Try to import and test Azure DevOps API
-                from .azure_devops_api import AzureDevOpsAPI
-                api = AzureDevOpsAPI(config_values.get('AZURE_DEVOPS_PAT'))
-                
-                # Basic connection test (this would need actual implementation)
-                results.append("Azure DevOps: ✅ Configuration looks valid")
-            except ImportError:
-                results.append("Azure DevOps: ⚠️ Configuration set (API module not available)")
-            except Exception as e:
-                results.append(f"Azure DevOps: ❌ Error - {str(e)}")
-        elif config_values.get('AZURE_DEVOPS_QUERY') or config_values.get('AZURE_DEVOPS_PAT'):
-            results.append("Azure DevOps: ⚠️ Incomplete configuration")
-        
+        # REMOVED: Azure DevOps test connection
+        # This was specific to Azure DevOps integration
+
         # Test GitHub
         if config_values.get('GITHUB_PAT'):
             try:
@@ -605,15 +949,15 @@ class SettingsDialog:
             config_values = self._get_config_values()
             
             # Validate required fields
-            required_for_basic = ['AZURE_DEVOPS_QUERY', 'AZURE_DEVOPS_PAT', 'GITHUB_PAT']
+            required_for_basic = ['GITHUB_PAT']
             missing_basic = [field for field in required_for_basic if not config_values.get(field)]
-            
+
             if missing_basic:
                 messagebox.showwarning(
                     "Missing Configuration",
                     f"The following required fields are missing:\n\n"
                     f"• {', '.join(missing_basic)}\n\n"
-                    f"These are required for basic functionality."
+                    f"GitHub Personal Access Token is required for basic functionality."
                 )
                 return
             
@@ -686,7 +1030,7 @@ class SettingsDialog:
             import os
             
             # Create .env content
-            env_content = "# Azure DevOps to GitHub Tool Configuration\n"
+            env_content = "# GitHub Pulse Configuration\n"
             env_content += "# Generated by Settings Dialog\n\n"
             
             # Add all configuration values
@@ -822,11 +1166,11 @@ class SettingsDialog:
         self.dialog.destroy()
 
     def _clear_cache(self):
-        """Clear all cached work items"""
+        """Clear all cached items"""
         result = messagebox.askyesno(
             "Clear Cache",
             "Are you sure you want to clear all cached items?\n\n"
-            "Cached work items and UUF items will be removed.\n"
+            "All cached data will be removed.\n"
             "The next time you open the app, it will auto-load fresh data."
         )
         if result:

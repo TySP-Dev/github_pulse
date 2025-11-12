@@ -1,33 +1,31 @@
 """
-Azure DevOps & UUF → GitHub Processor - Application Components
+GitHub Pulse - Application Components
 Modular components for the application
 """
 
 # Version info
-__version__ = "3.0.0"
-__author__ = "Azure DevOps to GitHub Processor"
+__version__ = "1.0.0"
+__author__ = "GitHub Pulse"
 
 # Export main classes for easier imports
 from .config_manager import ConfigManager
 from .ai_manager import AIManager
 from .github_api import GitHubAPI
-from .azure_devops_api import AzureDevOpsAPI
-from .dataverse_api import DataverseAPI
-from .work_item_processor import WorkItemProcessor
 from .settings_dialog import SettingsDialog
 from .main_gui import MainGUI
 from .utils import Logger, PRNumberManager, ContentBuilders
+from .workflow import WorkflowManager, WorkflowItem, GitHubRepoFetcher
 
 __all__ = [
     'ConfigManager',
-    'AIManager', 
+    'AIManager',
     'GitHubAPI',
-    'AzureDevOpsAPI',
-    'DataverseAPI',
-    'WorkItemProcessor',
     'SettingsDialog',
     'MainGUI',
     'Logger',
     'PRNumberManager',
-    'ContentBuilders'
+    'ContentBuilders',
+    'WorkflowManager',
+    'WorkflowItem',
+    'GitHubRepoFetcher'
 ]

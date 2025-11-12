@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 # Constants
 GITHUB_GRAPHQL_ENDPOINT = "https://api.github.com/graphql"
-USER_AGENT = "azure-devops-github-processor/2.0"
+USER_AGENT = "github-automation-tool/1.0"
 
 
 class GitHubGQL:
@@ -552,7 +552,7 @@ class GitHubGQL:
             raise
     
     def create_pull_request(self, repository_id: str, title: str, body: str, head_ref: str, base_ref: str = "main") -> tuple[str, str, int]:
-        """Create a pull request with AB# linking"""
+        """Create a pull request"""
         self.log(f"Creating pull request with createPullRequest mutation from {head_ref} to {base_ref}...")
         mutation = """
         mutation($repositoryId:ID!, $title:String!, $body:String!, $headRefName:String!, $baseRefName:String!) {
@@ -650,7 +650,7 @@ class GitHubGQL:
     
     def add_copilot_comment(self, owner: str, repo: str, pr_number: int,
                             file_path: str, old_text: str, new_text: str, branch_name: str,
-                            work_item_id: str = None, item_source: str = None, doc_url: str = None, 
+                            work_item_id: str = None, item_source: str = None, doc_url: str = None,
                             custom_instructions: str = None) -> bool:
         """Add a comment mentioning @copilot with explicit instructions to work on THIS PR
 
@@ -664,8 +664,8 @@ class GitHubGQL:
             old_text: Text to find and replace
             new_text: New text to replace with
             branch_name: Branch name for this PR
-            work_item_id: Work item or UUF issue ID
-            item_source: Source of the item ('UUF' or 'Azure DevOps')
+            work_item_id: Reference ID for tracking (optional)
+            item_source: Source of the item (optional)
 
         Returns True if successful, False otherwise.
         """
@@ -680,25 +680,22 @@ class GitHubGQL:
                 "User-Agent": USER_AGENT
             }
 
-            # Build work item reference
+            # Build reference ID if provided
             if work_item_id:
-                if item_source == 'UUF':
-                    work_item_ref = f"**UUF Issue:** {work_item_id}\n"
-                else:
-                    work_item_ref = f"**Azure DevOps Work Item:** AB#{work_item_id}\n"
+                reference_id = f"**Reference ID:** {work_item_id}\n"
             else:
-                work_item_ref = ""
+                reference_id = ""
 
             # Build document reference
-            if file_path and not file_path.startswith("See work item") and not file_path.startswith("File path not specified"):
+            if file_path and not file_path.startswith("File path not specified"):
                 doc_ref = f"**Document to modify:** `{file_path}`\n"
                 file_instruction = f"2. Locate the file: `{file_path}`"
             elif doc_url:
                 doc_ref = f"**Document URL:** {doc_url}\n"
                 file_instruction = f"2. Locate the file from this document URL: {doc_url}"
             else:
-                doc_ref = "**Note:** File path not specified in work item\n"
-                file_instruction = "2. Review the PR description and work item details to identify the file(s) that need to be modified"
+                doc_ref = "**Note:** File path not specified\n"
+                file_instruction = "2. Review the PR description to identify the file(s) that need to be modified"
 
             # Build custom instructions section
             if custom_instructions and custom_instructions.strip():
@@ -713,25 +710,24 @@ class GitHubGQL:
             # Create a comment mentioning @copilot with VERY explicit instructions
             comment_body = f"""@copilot
 
-{work_item_ref}{doc_ref}
+{reference_id}{doc_ref}
 
 **Instructions:**
 
-Task: Update the documentation file with the changes requested above.
+Task: Update the file with the changes requested above.
 
 Steps to complete:
 
 Locate the file containing the reference shown below.
 Find the reference text within the file
 Replace it with the 'Proposed New Text' shown above or use the reference as guidance
-Maintain the existing formatting, indentation, and markdown structure
+Maintain the existing formatting, indentation, and structure
 Ensure no other content in the file is modified
 
 > [!IMPORTANT]
 > Only replace the specified text - do not make additional changes.
-> Preserve all markdown formatting, links, and code blocks.
+> Preserve all formatting, links, and code blocks.
 > If the current text cannot be found exactly, search for similar text.
-> Please ensure the changes align with Microsoft documentation standards.
 > Do not remove any text unless the reference or suggested guidance indicates to do so, if the text is obsolete or incorrect.
 
 1. Make changes to `{branch_name}` branch for this pull request.
@@ -748,14 +744,13 @@ Ensure no other content in the file is modified
 {new_text}
 ```
 
-5. Ensure the changes align with the context of the work item.
+5. Ensure the changes align with the context provided.
 
 6. Do a freshness check to ensure the file content is up-to-date before making changes.
 
 7. Commit the changes to the `{branch_name}` branch
 
 > [!NOTE]
-> This documentation is maintained by spelluru.
 > If guidance is empty, follow the reference to make changes.
 
 {custom_instructions_section}
@@ -848,7 +843,7 @@ Thank you!
 {new_text}
 ```
 
-**Automated Suggestion:** This change was requested in Azure DevOps work item.
+**Automated Suggestion:** This change was requested.
 
 Click "Commit suggestion" above to apply this change directly to the PR."""
 

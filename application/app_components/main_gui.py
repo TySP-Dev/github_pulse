@@ -12,9 +12,8 @@ from typing import List, Dict, Any, Optional
 
 from .utils import Logger
 from .settings_dialog import SettingsDialog
-from .work_item_processor import WorkItemProcessor
-from .azure_devops_api import AzureDevOpsAPI
-from .dataverse_api import DataverseAPI
+# Removed imports: WorkItemProcessor, AzureDevOpsAPI, DataverseAPI
+# These were specific to Azure DevOps integration
 
 
 class HyperlinkDialog:
@@ -135,9 +134,10 @@ class MainGUI:
         
         # Initialize logger after GUI is created
         self.logger = Logger(self.log_text)
-        
-        # Initialize work item processor
-        self.work_item_processor = WorkItemProcessor(self.logger, self.config_manager.get_config())
+
+        # Initialize work item processor - REMOVED (was Azure DevOps specific)
+        # self.work_item_processor = WorkItemProcessor(self.logger, self.config_manager.get_config())
+        self.work_item_processor = None  # Placeholder for future implementation
 
         # Initialize cache manager
         from .cache_manager import CacheManager
@@ -222,7 +222,7 @@ class MainGUI:
         title_frame.columnconfigure(0, weight=1)
         
         # Title
-        title_label = ttk.Label(title_frame, text="MicrosoftDocFlow v3",
+        title_label = ttk.Label(title_frame, text="GitHub Pulse",
                                font=('Arial', 16, 'bold'))
         title_label.grid(row=0, column=0, sticky=tk.W)
         
@@ -237,53 +237,177 @@ class MainGUI:
         self.settings_button.grid(row=0, column=2, sticky=tk.E, padx=(5, 0))
     
     def _create_controls_section(self, parent):
-        """Create work item controls section"""
-        # Work Item Details group frame
-        workitem_frame = ttk.LabelFrame(parent, text="📋 Work Item Details", 
-                                       style='WorkItem.TLabelframe', padding="15")
-        workitem_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15), padx=5)
-        workitem_frame.columnconfigure(2, weight=1)
-        
-        # Controls row
-        controls_row = ttk.Frame(workitem_frame)
-        controls_row.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
-        controls_row.columnconfigure(6, weight=1)
-        
-        # Fetch buttons
-        self.fetch_button = ttk.Button(controls_row, text="📥 Fetch Work Items",
-                                      command=self.start_fetch_work_items)
-        self.fetch_button.grid(row=0, column=0, padx=(0, 10))
+        """Create GitHub Tools section"""
+        # GitHub Tools group frame
+        tools_frame = ttk.LabelFrame(parent, text="🔧 GitHub Tools",
+                                     style='WorkItem.TLabelframe', padding="15")
+        tools_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15), padx=5)
+        tools_frame.columnconfigure(1, weight=1)
 
-        self.fetch_uuf_button = ttk.Button(controls_row, text="📋 Fetch UUF Items",
-                                          command=self.start_fetch_uuf_items)
-        self.fetch_uuf_button.grid(row=0, column=1, padx=(0, 15))
+        # Initialize workflow data
+        self.target_repos = []
+        self.forked_repos = []
+        self.workflow_items = []
+        self.current_workflow_items = []
 
-        # Navigation buttons
-        self.prev_button = ttk.Button(controls_row, text="← Previous",
-                                     command=self.previous_item, state='disabled')
-        self.prev_button.grid(row=0, column=2, padx=(0, 5))
+        # Get current config
+        config = self.config_manager.get_config()
 
-        self.next_button = ttk.Button(controls_row, text="Next →",
-                                     command=self.next_item, state='disabled')
-        self.next_button.grid(row=0, column=3, padx=(0, 15))
+        # Row 0: Mode Selection
+        mode_frame = ttk.Frame(tools_frame)
+        mode_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10), padx=5)
 
-        # Action type dropdown
-        self.action_type_var = tk.StringVar(value="Create Issue")
-        self.action_type_dropdown = ttk.Combobox(controls_row, textvariable=self.action_type_var,
-                                               values=["Create Issue", "Create PR"],
-                                               state="readonly", width=15)
-        self.action_type_dropdown.grid(row=0, column=4, padx=(0, 5))
-        self.action_type_dropdown.bind("<<ComboboxSelected>>", lambda e: self.update_action_button_text())
+        ttk.Label(mode_frame, text="Mode:", font=('Arial', 10, 'bold')).grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 10))
 
-        # GO button
-        self.go_button = ttk.Button(controls_row, text="🚀 GO",
-                                   command=self.create_github_resource, state='disabled')
-        self.go_button.grid(row=0, column=5, padx=(0, 20))
+        self.tools_mode_var = tk.StringVar(value="action")
+        create_radio = ttk.Radiobutton(mode_frame, text="✏️ Create PR/Issue", variable=self.tools_mode_var,
+                                      value="create", command=self._on_mode_changed)
+        create_radio.grid(row=0, column=1, padx=(0, 15))
+
+        action_radio = ttk.Radiobutton(mode_frame, text="📋 Action Existing PR/Issue", variable=self.tools_mode_var,
+                                      value="action", command=self._on_mode_changed)
+        action_radio.grid(row=0, column=2, padx=(0, 10))
+
+        # Separator
+        ttk.Separator(tools_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 10))
+
+        # Row 2: Target Repository
+        self.target_repo_label = ttk.Label(tools_frame, text="Target Repository:", font=('Arial', 10, 'bold'))
+        self.target_repo_label.grid(row=2, column=0, sticky=tk.W, pady=5, padx=5)
+
+        target_frame = ttk.Frame(tools_frame)
+        target_frame.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        target_frame.columnconfigure(0, weight=1)
+
+        self.target_repo_var = tk.StringVar(value=config.get('GITHUB_REPO', ''))
+        self.target_repo_dropdown = ttk.Combobox(target_frame, textvariable=self.target_repo_var,
+                                                values=[''], width=60)
+        self.target_repo_dropdown.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        self.target_repo_dropdown.bind('<KeyRelease>', self._on_target_repo_search)
+        self.target_repo_dropdown.bind('<<ComboboxSelected>>', lambda e: self._on_repo_selection_changed())
+
+        refresh_target_btn = ttk.Button(target_frame, text="🔄", width=3,
+                                       command=self._refresh_target_repos)
+        refresh_target_btn.grid(row=0, column=1, padx=(0, 2))
+
+        search_target_btn = ttk.Button(target_frame, text="🔍", width=3,
+                                      command=self._search_target_repos)
+        search_target_btn.grid(row=0, column=2)
+
+        # Row 3: Forked Repository
+        self.forked_repo_label = ttk.Label(tools_frame, text="Forked Repository:", font=('Arial', 10, 'bold'))
+        self.forked_repo_label.grid(row=3, column=0, sticky=tk.W, pady=5, padx=5)
+
+        self.fork_frame = ttk.Frame(tools_frame)
+        self.fork_frame.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        self.fork_frame.columnconfigure(0, weight=1)
+
+        self.forked_repo_var = tk.StringVar(value=config.get('FORKED_REPO', ''))
+        self.forked_repo_dropdown = ttk.Combobox(self.fork_frame, textvariable=self.forked_repo_var,
+                                                values=[''], width=60)
+        self.forked_repo_dropdown.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
+        self.forked_repo_dropdown.bind('<<ComboboxSelected>>', lambda e: self._on_repo_selection_changed())
+
+        refresh_fork_btn = ttk.Button(self.fork_frame, text="🔄", width=3,
+                                     command=self._refresh_forked_repos)
+        refresh_fork_btn.grid(row=0, column=1, padx=(0, 2))
+
+        clone_fork_btn = ttk.Button(self.fork_frame, text="📥", width=3,
+                                   command=self._clone_forked_repo)
+        clone_fork_btn.grid(row=0, column=2)
+
+        # Row 4: Action Mode Controls (View toggles and load button)
+        self.action_controls_row = ttk.Frame(tools_frame)
+        self.action_controls_row.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 5), padx=5)
+        self.action_controls_row.columnconfigure(2, weight=1)
+
+        # Repo source toggle
+        ttk.Label(self.action_controls_row, text="View:", font=('Arial', 10, 'bold')).grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 5))
+
+        self.repo_source_var = tk.StringVar(value="target")
+        target_radio = ttk.Radiobutton(self.action_controls_row, text="Target", variable=self.repo_source_var,
+                                      value="target", command=self._filter_workflow_items)
+        target_radio.grid(row=0, column=1, padx=(0, 5))
+
+        fork_radio = ttk.Radiobutton(self.action_controls_row, text="Fork", variable=self.repo_source_var,
+                                    value="fork", command=self._filter_workflow_items)
+        fork_radio.grid(row=0, column=2, padx=(0, 15))
+
+        # Item type toggle
+        self.item_type_var = tk.StringVar(value="pull_request")
+        pr_radio = ttk.Radiobutton(self.action_controls_row, text="PRs", variable=self.item_type_var,
+                                  value="pull_request", command=self._filter_workflow_items)
+        pr_radio.grid(row=0, column=3, padx=(0, 5))
+
+        issue_radio = ttk.Radiobutton(self.action_controls_row, text="Issues", variable=self.item_type_var,
+                                     value="issue", command=self._filter_workflow_items)
+        issue_radio.grid(row=0, column=4, padx=(0, 15))
+
+        # Fetch button
+        self.fetch_workflow_btn = ttk.Button(self.action_controls_row, text="📥 Load Items",
+                                            command=self._load_workflow_items)
+        self.fetch_workflow_btn.grid(row=0, column=5, padx=(0, 10))
 
         # Item counter
-        self.item_counter_label = ttk.Label(controls_row, text="No items loaded",
+        self.item_counter_label = ttk.Label(self.action_controls_row, text="No items loaded",
                                            font=('Arial', 9, 'italic'))
         self.item_counter_label.grid(row=0, column=6, sticky=tk.E)
+
+        # Row 5: Workflow items dropdown (Action Mode)
+        self.action_item_label = ttk.Label(tools_frame, text="Select Item:", font=('Arial', 10, 'bold'))
+        self.action_item_label.grid(row=5, column=0, sticky=tk.W, pady=5, padx=5)
+
+        action_item_dropdown_frame = ttk.Frame(tools_frame)
+        action_item_dropdown_frame.grid(row=5, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
+        action_item_dropdown_frame.columnconfigure(0, weight=1)
+
+        self.workflow_item_var = tk.StringVar()
+        self.workflow_item_dropdown = ttk.Combobox(action_item_dropdown_frame, textvariable=self.workflow_item_var,
+                                                   values=[''], width=60, state='readonly')
+        self.workflow_item_dropdown.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        self.workflow_item_dropdown.bind('<<ComboboxSelected>>', self._on_workflow_item_selected)
+
+        # Row 4-5: Create Mode Controls (hidden by default)
+        self.create_controls_row = ttk.Frame(tools_frame)
+        self.create_controls_row.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 5), padx=5)
+        self.create_controls_row.columnconfigure(1, weight=1)
+
+        # Create type selection
+        ttk.Label(self.create_controls_row, text="Create:", font=('Arial', 10, 'bold')).grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 5))
+
+        self.create_type_var = tk.StringVar(value="pull_request")
+        create_pr_radio = ttk.Radiobutton(self.create_controls_row, text="📝 Pull Request",
+                                         variable=self.create_type_var, value="pull_request")
+        create_pr_radio.grid(row=0, column=1, padx=(0, 15), sticky=tk.W)
+
+        create_issue_radio = ttk.Radiobutton(self.create_controls_row, text="🐛 Issue",
+                                            variable=self.create_type_var, value="issue")
+        create_issue_radio.grid(row=0, column=2, padx=(0, 15), sticky=tk.W)
+
+        # Create button
+        self.create_item_btn = ttk.Button(self.create_controls_row, text="✏️ Create New",
+                                         command=self._create_new_item)
+        self.create_item_btn.grid(row=0, column=3, padx=(0, 10))
+
+        # Store references for show/hide
+        self.action_mode_widgets = [
+            self.action_controls_row,
+            self.action_item_label,
+            action_item_dropdown_frame
+        ]
+
+        self.create_mode_widgets = [
+            self.create_controls_row
+        ]
+
+        # Initialize mode (show action, hide create)
+        self._on_mode_changed()
+
+        # Start loading repos
+        self.root.after(100, self._init_load_repos)
     
     def _create_status_section(self, parent):
         """Create progress and status section"""
@@ -664,7 +788,10 @@ class MainGUI:
             # Process items
             self.current_work_items = []
             for item in work_items:
-                processed_item = self.work_item_processor.process_work_item(item)
+                # REMOVED: Azure DevOps specific processing
+                # processed_item = self.work_item_processor.process_work_item(item)
+                # TODO: Implement custom item processing here
+                processed_item = item  # Placeholder
                 if processed_item:
                     self.current_work_items.append(processed_item)
 
@@ -723,7 +850,10 @@ class MainGUI:
             # Process items
             self.current_work_items = []
             for item in uuf_items:
-                processed_item = self.work_item_processor.process_uuf_item(item)
+                # REMOVED: UUF/Dataverse specific processing
+                # processed_item = self.work_item_processor.process_uuf_item(item)
+                # TODO: Implement custom item processing here
+                processed_item = item  # Placeholder
                 if processed_item:
                     self.current_work_items.append(processed_item)
 
@@ -1850,13 +1980,27 @@ Proposed new text:
                 api_key = config.get('OPENAI_API_KEY', '').strip()
             elif ai_provider in ['github-copilot', 'copilot', 'github_copilot']:
                 api_key = config.get('GITHUB_TOKEN', '').strip()
+            elif ai_provider == 'ollama':
+                api_key = config.get('OLLAMA_API_KEY', '').strip()  # Optional for Ollama
             else:
                 api_key = ''
             github_token = config.get('GITHUB_PAT', '').strip()
             local_repo_path = config.get('LOCAL_REPO_PATH', '').strip() or None
 
-            if not api_key:
+            # Validate API key (except for Ollama where it's optional)
+            if not api_key and ai_provider != 'ollama':
                 raise ValueError(f"No API key configured for {ai_provider}. Please configure in Settings.")
+
+            # Get Ollama-specific configuration
+            ollama_url = None
+            ollama_model = None
+            if ai_provider == 'ollama':
+                ollama_url = config.get('OLLAMA_URL', '').strip()
+                ollama_model = config.get('OLLAMA_MODEL', '').strip()
+                if not ollama_url:
+                    raise ValueError("Ollama Server URL not configured. Please configure in Settings.")
+                if not ollama_model:
+                    raise ValueError("Ollama Model not selected. Please configure in Settings.")
 
             self.logger.log(f"Using AI Provider: {ai_provider.upper()}")
 
@@ -1865,7 +2009,7 @@ Proposed new text:
             ai_manager = AIManager(self.logger)
 
             # Create AI provider instance
-            ai_provider_instance = ai_manager.create_ai_provider(ai_provider, api_key)
+            ai_provider_instance = ai_manager.create_ai_provider(ai_provider, api_key, ollama_url, ollama_model)
             if not ai_provider_instance:
                 raise ValueError(f"Failed to create {ai_provider} provider")
 
@@ -2161,19 +2305,465 @@ Proposed new text:
         try:
             config = self.config_manager.get_config()
             ai_provider = config.get('AI_PROVIDER', '').strip().lower()
-            
+
             if not ai_provider or ai_provider == 'none' or ai_provider == '':
                 return  # No AI provider selected
-            
+
             # Check if this provider requires special modules
             if ai_provider not in ['chatgpt', 'claude', 'anthropic', 'github-copilot', 'copilot', 'github_copilot']:
                 return  # Unknown provider, skip check
-            
+
             # Check module availability using AI manager
             self.ai_manager.check_and_install_ai_modules(ai_provider, self.root)
-            
+
         except Exception as e:
             self.logger.log(f"Error checking AI provider setup: {str(e)}")
+
+    # ===== GitHub Tools Methods =====
+
+    def _init_load_repos(self):
+        """Initialize loading of repositories"""
+        self._load_target_repos_async()
+        self._load_forked_repos_async()
+
+    def _load_target_repos_async(self):
+        """Load target repositories asynchronously"""
+        def load_repos():
+            try:
+                config = self.config_manager.get_config()
+                github_token = config.get('GITHUB_PAT', '')
+                if not github_token:
+                    return
+
+                from .workflow import GitHubRepoFetcher
+                repo_fetcher = GitHubRepoFetcher(github_token, self.logger)
+                repos = repo_fetcher.fetch_repos_with_permissions(min_permission='push')
+                self.target_repos = repo_fetcher.get_repo_names(repos)
+
+                # Update dropdown on main thread
+                self.root.after(0, self._update_target_dropdown)
+
+            except Exception as e:
+                self.logger.log(f"Error loading target repos: {e}")
+
+        threading.Thread(target=load_repos, daemon=True).start()
+
+    def _update_target_dropdown(self):
+        """Update the target repository dropdown"""
+        try:
+            current_values = ['']  # Start with empty option
+
+            # Add user's repos with edit access
+            if self.target_repos:
+                current_values.append('--- Your Repos (with edit access) ---')
+                current_values.extend(self.target_repos)
+
+            self.target_repo_dropdown['values'] = current_values
+
+        except Exception as e:
+            self.logger.log(f"Error updating target dropdown: {e}")
+
+    def _refresh_target_repos(self):
+        """Refresh target repositories"""
+        self._load_target_repos_async()
+
+    def _search_target_repos(self):
+        """Search for repositories on GitHub"""
+        query = self.target_repo_var.get().strip()
+        if not query:
+            return
+
+        def search_repos():
+            try:
+                config = self.config_manager.get_config()
+                github_token = config.get('GITHUB_PAT', '')
+                if not github_token:
+                    return
+
+                from .workflow import GitHubRepoFetcher
+                repo_fetcher = GitHubRepoFetcher(github_token, self.logger)
+                repos = repo_fetcher.search_repositories(query, per_page=50)
+                search_results = repo_fetcher.get_repo_names(repos)
+
+                # Update dropdown on main thread
+                self.root.after(0, lambda: self._update_target_search_results(search_results))
+
+            except Exception as e:
+                self.logger.log(f"Error searching repos: {e}")
+
+        threading.Thread(target=search_repos, daemon=True).start()
+
+    def _update_target_search_results(self, search_results):
+        """Update target dropdown with search results"""
+        try:
+            current_values = ['']
+
+            # Add user's repos
+            if self.target_repos:
+                current_values.append('--- Your Repos (with edit access) ---')
+                current_values.extend(self.target_repos)
+
+            # Add search results
+            if search_results:
+                current_values.append('--- Search Results ---')
+                current_values.extend(search_results)
+
+            self.target_repo_dropdown['values'] = current_values
+
+        except Exception as e:
+            self.logger.log(f"Error updating search results: {e}")
+
+    def _on_target_repo_search(self, _event):
+        """Handle typing in target repo field for auto-search"""
+        # Debounce: only search after user stops typing for 500ms
+        if hasattr(self, '_search_timer'):
+            self.root.after_cancel(self._search_timer)
+
+        query = self.target_repo_var.get().strip()
+        if len(query) >= 3:  # Only search if at least 3 characters
+            self._search_timer = self.root.after(500, self._search_target_repos)
+
+    def _load_forked_repos_async(self):
+        """Load forked repositories asynchronously"""
+        def load_forks():
+            try:
+                config = self.config_manager.get_config()
+                github_token = config.get('GITHUB_PAT', '')
+                local_repo_path = config.get('LOCAL_REPO_PATH', '')
+
+                # Load local repos
+                local_repos = []
+                if local_repo_path:
+                    try:
+                        from .utils import LocalRepositoryScanner
+                        local_repos = LocalRepositoryScanner.scan_local_repos(local_repo_path)
+                    except Exception as e:
+                        self.logger.log(f"Error scanning local repos: {e}")
+
+                # Load GitHub repos
+                github_repos = []
+                if github_token:
+                    try:
+                        from .workflow import GitHubRepoFetcher
+                        repo_fetcher = GitHubRepoFetcher(github_token, self.logger)
+                        repos = repo_fetcher.fetch_user_repos(repo_type='owner')
+                        github_repos = repo_fetcher.get_repo_names(repos)
+                    except Exception as e:
+                        self.logger.log(f"Error loading GitHub repos: {e}")
+
+                self.forked_repos = {'local': local_repos, 'github': github_repos}
+
+                # Update dropdown on main thread
+                self.root.after(0, self._update_forked_dropdown)
+
+            except Exception as e:
+                self.logger.log(f"Error loading forked repos: {e}")
+
+        threading.Thread(target=load_forks, daemon=True).start()
+
+    def _update_forked_dropdown(self):
+        """Update the forked repository dropdown"""
+        try:
+            current_values = ['']  # Start with empty option
+
+            # Add local repos
+            if self.forked_repos.get('local'):
+                current_values.append('--- Local Repositories ---')
+                current_values.extend(self.forked_repos['local'])
+
+            # Add GitHub repos
+            if self.forked_repos.get('github'):
+                current_values.append('--- Your GitHub Forks ---')
+                current_values.extend(self.forked_repos['github'])
+
+            self.forked_repo_dropdown['values'] = current_values
+
+        except Exception as e:
+            self.logger.log(f"Error updating forked dropdown: {e}")
+
+    def _refresh_forked_repos(self):
+        """Refresh forked repositories"""
+        self._load_forked_repos_async()
+
+    def _clone_forked_repo(self):
+        """Clone the selected forked repository"""
+        selected_repo = self.forked_repo_var.get().strip()
+
+        # Validate selection
+        if not selected_repo:
+            messagebox.showwarning("No Repository Selected",
+                                 "Please select a repository to clone.")
+            return
+
+        # Check if it's a section header
+        if selected_repo.startswith('---'):
+            messagebox.showwarning("Invalid Selection",
+                                 "Please select a repository, not a section header.")
+            return
+
+        config = self.config_manager.get_config()
+        local_repo_path = config.get('LOCAL_REPO_PATH', '').strip()
+        if not local_repo_path:
+            messagebox.showwarning("Local Path Not Configured",
+                                 "Please configure the Local Repository Path in settings first.")
+            return
+
+        # Clone logic (similar to settings_dialog.py)
+        import subprocess
+        import os
+
+        try:
+            os.makedirs(local_repo_path, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Directory Error",
+                               f"Could not create local repository directory:\n{str(e)}")
+            return
+
+        # Extract repo name
+        repo_name = selected_repo
+        if '/' not in repo_name:
+            messagebox.showerror("Invalid Repository",
+                               "Repository must be in 'owner/repo' format.")
+            return
+
+        folder_name = repo_name.split('/')[-1]
+        target_path = os.path.join(local_repo_path, folder_name)
+
+        if os.path.exists(target_path):
+            response = messagebox.askyesno("Directory Exists",
+                                          f"The directory '{folder_name}' already exists.\n\n"
+                                          f"Do you want to continue anyway?")
+            if not response:
+                return
+
+        clone_url = f"https://github.com/{repo_name}.git"
+
+        def clone_repo():
+            try:
+                result = subprocess.run(
+                    ['git', 'clone', clone_url, target_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+
+                if result.returncode == 0:
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Clone Successful",
+                        f"Successfully cloned {repo_name}!"))
+                    self.root.after(0, self._refresh_forked_repos)
+                else:
+                    error_msg = result.stderr if result.stderr else result.stdout
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Clone Failed",
+                        f"Failed to clone {repo_name}.\n\n{error_msg}"))
+
+            except subprocess.TimeoutExpired:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Clone Timeout",
+                    f"Cloning {repo_name} timed out after 5 minutes."))
+            except FileNotFoundError:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Git Not Found",
+                    "Git is not installed or not found in PATH."))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Clone Error",
+                    f"An error occurred while cloning:\n{str(e)}"))
+
+        messagebox.showinfo("Cloning Repository",
+                          f"Cloning {repo_name} to:\n{target_path}\n\n"
+                          f"This may take a few moments...")
+
+        threading.Thread(target=clone_repo, daemon=True).start()
+
+    def _on_mode_changed(self):
+        """Handle mode change between Create and Action"""
+        mode = self.tools_mode_var.get()
+
+        if mode == "action":
+            # Show action mode widgets
+            for widget in self.action_mode_widgets:
+                widget.grid()
+
+            # Hide create mode widgets
+            for widget in self.create_mode_widgets:
+                widget.grid_remove()
+        else:  # create mode
+            # Hide action mode widgets
+            for widget in self.action_mode_widgets:
+                widget.grid_remove()
+
+            # Show create mode widgets
+            for widget in self.create_mode_widgets:
+                widget.grid()
+
+    def _create_new_item(self):
+        """Handle creating a new PR or Issue"""
+        create_type = self.create_type_var.get()
+        target_repo = self.target_repo_var.get().strip()
+
+        # Skip section headers
+        if target_repo.startswith('---'):
+            target_repo = ''
+
+        if not target_repo:
+            messagebox.showwarning("No Repository Selected",
+                                 "Please select a target repository.")
+            return
+
+        if create_type == "pull_request":
+            # TODO: Implement PR creation workflow
+            messagebox.showinfo("Create Pull Request",
+                              f"PR creation workflow for {target_repo} will be implemented here.\n\n"
+                              "This will open the PR creation interface in the tabs below.")
+        else:  # issue
+            # TODO: Implement Issue creation workflow
+            messagebox.showinfo("Create Issue",
+                              f"Issue creation workflow for {target_repo} will be implemented here.\n\n"
+                              "This will open the Issue creation interface in the tabs below.")
+
+    def _on_repo_selection_changed(self):
+        """Handle repository selection change"""
+        # Clear workflow items when repos change
+        self.workflow_items = []
+        self.current_workflow_items = []
+        self.workflow_item_dropdown['values'] = ['']
+        self.workflow_item_var.set('')
+        self.item_counter_label.config(text="No items loaded")
+
+    def _load_workflow_items(self):
+        """Load workflow items from selected repositories"""
+        target_repo = self.target_repo_var.get().strip()
+        forked_repo = self.forked_repo_var.get().strip()
+
+        # Skip section headers
+        if target_repo.startswith('---'):
+            target_repo = ''
+        if forked_repo.startswith('---'):
+            forked_repo = ''
+
+        if not target_repo and not forked_repo:
+            messagebox.showwarning("No Repositories Selected",
+                                 "Please select at least one repository.")
+            return
+
+        self.progress.start()
+        self.update_status("Loading workflow items...")
+
+        def load_items():
+            try:
+                config = self.config_manager.get_config()
+                github_token = config.get('GITHUB_PAT', '')
+
+                from .workflow import WorkflowManager
+                workflow_manager = WorkflowManager(github_token, self.logger)
+
+                # Fetch all items
+                results = workflow_manager.fetch_all_workflow_items(
+                    target_repo=target_repo if target_repo else None,
+                    fork_repo=forked_repo if forked_repo else None,
+                    include_issues=True,
+                    include_prs=True,
+                    state='open'  # Only load open items
+                )
+
+                self.workflow_items = results
+
+                # Update UI on main thread
+                self.root.after(0, self._on_workflow_items_loaded)
+
+            except Exception as e:
+                self.logger.log(f"Error loading workflow items: {e}")
+                self.root.after(0, lambda: self.update_status("Failed to load workflow items"))
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Load Error",
+                    f"Failed to load workflow items:\n{str(e)}"))
+            finally:
+                self.root.after(0, self.progress.stop)
+
+        threading.Thread(target=load_items, daemon=True).start()
+
+    def _on_workflow_items_loaded(self):
+        """Handle workflow items loaded"""
+        total_items = sum(len(items) for items in self.workflow_items.values())
+        self.logger.log(f"Loaded {total_items} workflow items")
+        self.update_status(f"Loaded {total_items} workflow items")
+
+        # Apply current filters
+        self._filter_workflow_items()
+
+    def _filter_workflow_items(self):
+        """Filter workflow items based on current selections"""
+        if not self.workflow_items:
+            return
+
+        repo_source = self.repo_source_var.get()  # 'target' or 'fork'
+        item_type = self.item_type_var.get()  # 'pull_request' or 'issue'
+
+        # Get the appropriate list
+        # WorkflowManager returns keys like: 'target_prs', 'target_issues', 'fork_prs', 'fork_issues'
+        key = f"{repo_source}_prs" if item_type == 'pull_request' else f"{repo_source}_issues"
+        filtered_items = self.workflow_items.get(key, [])
+
+        # Update dropdown
+        self.current_workflow_items = filtered_items
+        item_options = [
+            f"#{item.number} - {item.title}" for item in filtered_items
+        ]
+
+        self.workflow_item_dropdown['values'] = item_options if item_options else ['']
+        self.workflow_item_var.set('')
+
+        # Update counter
+        count = len(filtered_items)
+        source_name = "Target" if repo_source == "target" else "Fork"
+        type_name = "PRs" if item_type == "pull_request" else "Issues"
+        self.item_counter_label.config(text=f"{count} {source_name} {type_name}")
+
+    def _on_workflow_item_selected(self, _event):
+        """Handle workflow item selection"""
+        selected = self.workflow_item_var.get()
+        if not selected:
+            return
+
+        # Extract item number from selection
+        try:
+            item_number = int(selected.split('#')[1].split(' ')[0])
+
+            # Find the item
+            for item in self.current_workflow_items:
+                if item.number == item_number:
+                    self._display_workflow_item(item)
+                    break
+
+        except Exception as e:
+            self.logger.log(f"Error selecting workflow item: {e}")
+
+    def _display_workflow_item(self, item):
+        """Display workflow item details"""
+        # Update Current Work Item tab
+        self.work_item_id_label.config(text=f"{item.item_type.upper()} #{item.number}")
+
+        # Update nature text
+        self.nature_text.config(state='normal')
+        self.nature_text.delete('1.0', tk.END)
+        self.nature_text.insert('1.0', item.title)
+        self.nature_text.config(state='disabled')
+
+        # Update URL
+        self.doc_url_text.config(state='normal')
+        self.doc_url_text.delete('1.0', tk.END)
+        self.doc_url_text.insert('1.0', item.url)
+        self.doc_url_text.config(state='disabled')
+
+        # Update description
+        self.description_text.config(state='normal')
+        self.description_text.delete('1.0', tk.END)
+        self.description_text.insert('1.0', item.body or 'No description')
+        self.description_text.config(state='disabled')
+
+        self.logger.log(f"Displaying {item.item_type} #{item.number}: {item.title}")
     
     def display_current_item(self):
         """Display current work item (public method for compatibility)"""

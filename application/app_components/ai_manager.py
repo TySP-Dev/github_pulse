@@ -2709,7 +2709,7 @@ class LocalGitManager:
             self.logger.log(f"❌ Error saving diff to file: {str(e)}")
 
 
-def create_ai_provider(provider_name: str, api_key: str, logger: Logger) -> Optional[AIProvider]:
+def create_ai_provider(provider_name: str, api_key: str, logger: Logger, ollama_url: str = None, ollama_model: str = None) -> Optional[AIProvider]:
     """Factory function to create AI provider instances"""
     if provider_name.lower() == 'claude':
         return ClaudeProvider(api_key, logger)
@@ -2717,6 +2717,9 @@ def create_ai_provider(provider_name: str, api_key: str, logger: Logger) -> Opti
         return ChatGPTProvider(api_key, logger)
     elif provider_name.lower() in ['github-copilot', 'copilot', 'github_copilot']:
         return GitHubCopilotProvider(api_key, logger)
+    elif provider_name.lower() == 'ollama':
+        # For Ollama, api_key is optional (can be empty string)
+        return OllamaProvider(api_key or "", logger, ollama_url, ollama_model)
     else:
         logger.log(f"⚠️ Unknown AI provider: {provider_name}")
         return None
@@ -2927,6 +2930,198 @@ def validate_ai_provider_setup(config: dict, parent_window=None) -> bool:
     return False
 
 
+class OllamaProvider(AIProvider):
+    """Ollama AI provider for self-hosted models"""
+
+    def __init__(self, api_key: str, logger: Logger, ollama_url: str = None, model: str = None):
+        super().__init__(api_key, logger)
+        self.ollama_url = ollama_url or "http://localhost:11434"
+        self.model = model or "llama2"
+
+        # Normalize URL
+        if not self.ollama_url.startswith('http'):
+            self.ollama_url = f"http://{self.ollama_url}"
+
+    def make_change(self, file_content: str, old_text: str, new_text: str, file_path: str, custom_instructions: str = None) -> Optional[str]:
+        """Make targeted changes using Ollama"""
+
+        # Step 1: Try direct string replacement first
+        if old_text and old_text.strip() in file_content:
+            self.logger.log("✅ Making direct string replacement (reference text found exactly)")
+            updated_content = file_content.replace(old_text.strip(), new_text.strip())
+            if updated_content != file_content:
+                original_lines = file_content.split('\n')
+                updated_lines = updated_content.split('\n')
+                import difflib
+                diff = list(difflib.unified_diff(original_lines, updated_lines, lineterm=''))
+                changed_lines = len([line for line in diff if line.startswith('+') or line.startswith('-')])
+                self.logger.log(f"✅ Direct replacement successful ({changed_lines} lines changed)")
+                return updated_content
+
+        # Step 2: Use Ollama to generate full document with targeted changes
+        self.logger.log(f"📝 Using Ollama ({self.model}) to modify the document...")
+        return self._generate_updated_document(file_content, old_text, new_text, file_path, custom_instructions)
+
+    def _generate_updated_document(self, file_content: str, old_text: str, new_text: str, file_path: str, custom_instructions: str = None) -> Optional[str]:
+        """Generate updated document content using Ollama"""
+
+        try:
+            import requests
+
+            # Build custom instructions text
+            if custom_instructions and custom_instructions.strip():
+                custom_instructions_text = f"""
+**Additional Custom Instructions:**
+{custom_instructions.strip()}
+
+"""
+            else:
+                custom_instructions_text = ""
+
+            # Handle case where new_text is empty or just guidance
+            if new_text and new_text.strip() and not new_text.strip().lower().startswith('<blank'):
+                # We have specific replacement text
+                guidance_text = f"""
+**Reference text to find:**
+```
+{old_text}
+```
+
+**Replace with this specific content:**
+```
+{new_text}
+```
+
+Please find the reference text and replace it with the suggested content."""
+            else:
+                # new_text is empty or just guidance - use old_text as instructions
+                guidance_text = f"""
+**Task Instructions:**
+{old_text}
+
+**Note:** No specific replacement text provided. Use the task instructions above to determine what changes to make to improve the document. Add appropriate content based on the instructions."""
+
+            prompt = f"""**Instructions:**
+
+Task: Update the documentation file with the changes requested.
+
+Steps to complete:
+
+1. Review the current file content below
+2. Follow the guidance provided to determine what changes to make
+3. Make appropriate improvements while maintaining existing formatting
+4. Return the complete updated file content
+
+> [!IMPORTANT]
+> OUTPUT REQUIREMENTS:
+> - Return ONLY the complete file content - no explanatory text, dialog, or commentary
+> - Do NOT add any text before or after the file content
+> - Do NOT wrap output in markdown code blocks (```), just return the raw content
+> - Return the ENTIRE document - no truncation, no placeholders like [Rest of the document here...]
+> - Every single line of the original document must be present in your response
+> - Preserve all markdown formatting, links, and code blocks exactly
+> - Only make changes that fulfill the specified request
+
+{custom_instructions_text}
+
+**Current File Content:**
+```
+{file_content}
+```
+
+{guidance_text}
+
+Return the complete updated file content now (NO explanatory text):"""
+
+            # Prepare request headers
+            headers = {
+                "Content-Type": "application/json"
+            }
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+
+            # Prepare request payload
+            payload = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.3,  # Lower temperature for more consistent output
+                    "num_predict": -1,   # Generate as many tokens as needed
+                }
+            }
+
+            # Make request to Ollama
+            self.logger.log(f"🔄 Sending request to Ollama at {self.ollama_url}...")
+            response = requests.post(
+                f"{self.ollama_url}/api/generate",
+                json=payload,
+                headers=headers,
+                timeout=300  # 5 minute timeout for large documents
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            updated_content = result.get("response", "").strip()
+
+            if not updated_content:
+                self.logger.log("❌ Ollama returned empty response")
+                return None
+
+            # Clean up response
+            updated_content = self._clean_ai_response(updated_content)
+
+            # Validate that we got the full document back
+            original_line_count = len(file_content.split('\n'))
+            updated_line_count = len(updated_content.split('\n'))
+
+            if updated_line_count < original_line_count * 0.5:  # Less than 50% of original lines
+                self.logger.log(f"⚠️ Warning: Updated document seems truncated ({updated_line_count} vs {original_line_count} lines)")
+                self.logger.log("❌ AI may have truncated the document - using fallback")
+                return None
+
+            self.logger.log(f"✅ Successfully generated updated document ({updated_line_count} lines)")
+            return updated_content
+
+        except requests.exceptions.ConnectionError:
+            self.logger.log(f"❌ Could not connect to Ollama server at {self.ollama_url}")
+            self.logger.log("   Make sure Ollama is running and the URL is correct")
+            return None
+        except requests.exceptions.Timeout:
+            self.logger.log("❌ Request to Ollama server timed out")
+            return None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                self.logger.log("❌ Authentication failed - check your Ollama API key")
+            elif e.response.status_code == 404:
+                self.logger.log(f"❌ Model '{self.model}' not found on Ollama server")
+                self.logger.log(f"   Use 'ollama pull {self.model}' to download it")
+            else:
+                self.logger.log(f"❌ HTTP error from Ollama: {e}")
+            return None
+        except Exception as e:
+            self.logger.log(f"❌ Error calling Ollama: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _clean_ai_response(self, response: str) -> str:
+        """Clean up AI response by removing markdown code blocks and explanatory text"""
+
+        # Remove markdown code blocks if present
+        if response.startswith('```'):
+            lines = response.split('\n')
+            # Remove first line if it's a code fence
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            # Remove last line if it's a code fence
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            response = '\n'.join(lines)
+
+        return response.strip()
+
+
 # AI Providers availability flag - now always True since they're included
 AI_PROVIDERS_AVAILABLE = True
 
@@ -2952,18 +3147,18 @@ class AIManager:
     
     def check_ai_module_availability(self, provider_name: str) -> Tuple[bool, List[str]]:
         """Check if AI provider modules are available and return missing packages
-        
+
         Args:
-            provider_name: 'chatgpt', 'claude', 'anthropic', or 'github-copilot'
-            
+            provider_name: 'chatgpt', 'claude', 'anthropic', 'github-copilot', or 'ollama'
+
         Returns:
             tuple: (all_available, missing_packages)
         """
         missing_packages = []
-        
+
         # Common packages needed for AI providers
         required_common = ['GitPython']
-        
+
         # Provider-specific packages
         if provider_name.lower() == 'chatgpt':
             required_packages = required_common + ['openai']
@@ -2971,9 +3166,11 @@ class AIManager:
             required_packages = required_common + ['anthropic']
         elif provider_name.lower() in ['github-copilot', 'copilot', 'github_copilot']:
             required_packages = required_common + ['requests']
+        elif provider_name.lower() == 'ollama':
+            required_packages = required_common + ['requests']
         else:
             return True, []  # Unknown provider, assume no check needed
-        
+
         for package in required_packages:
             try:
                 if package == 'GitPython':
@@ -2982,9 +3179,11 @@ class AIManager:
                     import openai
                 elif package == 'anthropic':
                     import anthropic
+                elif package == 'requests':
+                    import requests
             except ImportError:
                 missing_packages.append(package)
-        
+
         all_available = len(missing_packages) == 0
         return all_available, missing_packages
     
@@ -3159,14 +3358,14 @@ class AIManager:
             if self.logger:
                 self.logger.log(f"Error in AI modules check: {str(e)}")
     
-    def create_ai_provider(self, provider_name: str, api_key: str):
+    def create_ai_provider(self, provider_name: str, api_key: str, ollama_url: str = None, ollama_model: str = None):
         """Create an AI provider instance"""
         if not AI_PROVIDERS_AVAILABLE:
             return None
-        
+
         try:
             ai_logger = Logger(self.log)
-            return create_ai_provider(provider_name, api_key, ai_logger)
+            return create_ai_provider(provider_name, api_key, ai_logger, ollama_url, ollama_model)
         except Exception as e:
             self.log(f"Error creating AI provider: {e}")
             return None

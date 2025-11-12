@@ -192,11 +192,11 @@ class GitHubInfoExtractor:
 
 
 class WorkItemFieldExtractor:
-    """Extracts and processes work item fields"""
-    
+    """Extracts and processes item fields (placeholder for future implementation)"""
+
     @staticmethod
     def extract_work_item_fields(work_item: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract and process fields from Azure DevOps work item"""
+        """Extract and process fields from work item (placeholder)"""
         fields = work_item.get('fields', {})
         
         # Extract basic fields
@@ -243,12 +243,12 @@ class WorkItemFieldExtractor:
             'new_text': new_text,
             'github_info': github_info,
             'status': 'Ready',
-            'source': 'Azure DevOps'
+            'source': 'Generic'
         }
-    
+
     @staticmethod
     def extract_uuf_item_fields(uuf_item: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract and process fields from UUF item"""
+        """Extract and process fields from custom item (placeholder)"""
         # UUF items have different field structure
         item_id = uuf_item.get('cr_uufitemid', 'Unknown')
         title = uuf_item.get('cr_title', 'No Title')
@@ -296,17 +296,18 @@ class ContentBuilders:
     @staticmethod
     def build_issue_title(item: Dict[str, Any]) -> str:
         """Build GitHub issue title"""
-        source_prefix = "UUF" if item.get('source') == 'UUF' else "AB"
-        return f"[{source_prefix}#{item['id']}] {item['title']}"
-    
+        item_id = item.get('id', '')
+        if item_id:
+            return f"[#{item_id}] {item['title']}"
+        return f"{item['title']}"
+
     @staticmethod
     def build_issue_body(item: Dict[str, Any], github_info: Dict[str, Any]) -> str:
         """Build GitHub issue body"""
         body_parts = []
-        
+
         # Header
-        source_name = "UUF Item" if item.get('source') == 'UUF' else "Azure DevOps Work Item"
-        body_parts.append(f"## {source_name} Details")
+        body_parts.append("## Item Details")
         body_parts.append("")
 
         # Make ID a hyperlink if source URL is available
@@ -372,24 +373,25 @@ class ContentBuilders:
         body_parts.append("5. Close this issue when complete")
         body_parts.append("")
         body_parts.append("---")
-        body_parts.append("*Created automatically by Azure DevOps → GitHub Processor*")
-        
+        body_parts.append("*Created automatically by GitHub Pulse*")
+
         return "\n".join(body_parts)
-    
+
     @staticmethod
     def build_pr_title(item: Dict[str, Any]) -> str:
         """Build GitHub PR title"""
-        source_prefix = "UUF" if item.get('source') == 'UUF' else "AB"
-        return f"[{source_prefix}#{item['id']}] {item['title']}"
+        item_id = item.get('id', '')
+        if item_id:
+            return f"[#{item_id}] {item['title']}"
+        return f"{item['title']}"
     
     @staticmethod
     def build_pr_body(item: Dict[str, Any], github_info: Dict[str, Any]) -> str:
         """Build GitHub PR body"""
         body_parts = []
-        
+
         # Header
-        source_name = "UUF Item" if item.get('source') == 'UUF' else "Azure DevOps Work Item"
-        body_parts.append(f"## {source_name} Documentation Update")
+        body_parts.append("## Documentation Update")
         body_parts.append("")
 
         # Make ID a hyperlink if source URL is available
@@ -446,10 +448,10 @@ class ContentBuilders:
         body_parts.append("- [ ] Grammar and formatting are correct")
         body_parts.append("- [ ] Links and references are working")
         body_parts.append("")
-        
+
         body_parts.append("---")
-        body_parts.append("*Created automatically by Azure DevOps → GitHub Processor*")
-        
+        body_parts.append("*Created automatically by GitHub Pulse*")
+
         return "\n".join(body_parts)
 
 
@@ -612,17 +614,14 @@ class ConfigurationHelpers:
     def create_default_env_file() -> bool:
         """Create a default .env file with all settings blank"""
         try:
-            default_config = """# Azure DevOps to GitHub Tool Configuration
+            default_config = """# GitHub Pulse Configuration
 # Generated automatically - fill in your values
 # IMPORTANT: Do NOT commit this file to source control. Add it to .gitignore.
-
-# Azure DevOps Configuration
-AZURE_DEVOPS_QUERY=
-AZURE_DEVOPS_PAT=
 
 # GitHub Configuration
 GITHUB_PAT=
 GITHUB_REPO=
+FORKED_REPO=
 
 # Application Settings
 DRY_RUN=false
@@ -634,12 +633,8 @@ OPENAI_API_KEY=
 GITHUB_TOKEN=
 LOCAL_REPO_PATH=
 
-# PowerApp/Dataverse Configuration (for UUF items - optional)
-DATAVERSE_ENVIRONMENT_URL=
-DATAVERSE_TABLE_NAME=
-AZURE_AD_CLIENT_ID=
-AZURE_AD_CLIENT_SECRET=
-AZURE_AD_TENANT_ID=
+# Custom AI Instructions (optional)
+CUSTOM_INSTRUCTIONS=
 """
             with open('.env', 'w', encoding='utf-8') as f:
                 f.write(default_config)
@@ -652,78 +647,8 @@ AZURE_AD_TENANT_ID=
             return False
 
 
-class EnhancedContentBuilders(ContentBuilders):
-    """Enhanced content builders with Azure DevOps specific methods"""
-    
-    @staticmethod
-    def build_pr_title_for_azure_devops(item: Dict[str, Any]) -> str:
-        """Build GitHub PR title for Azure DevOps items"""
-        return f"Docs update: {item['title'][:80]} (AB#{item['id']})"
-
-    @staticmethod
-    def build_pr_body_for_azure_devops(item: Dict[str, Any], github_info: Dict[str, Any]) -> str:
-        """Build GitHub PR body for Azure DevOps items with enhanced Copilot instructions"""
-        now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-
-        lines = [
-            f"**Automated documentation update from Azure DevOps (created on {now})**",
-            "",
-            f"**Work Item ID:** AB#{item['id']}",
-            f"**Document URL:** {item['mydoc_url']}",
-        ]
-
-        # Add file path information if available
-        if github_info.get('original_content_git_url'):
-            lines.append(f"**File Path:** {github_info['original_content_git_url']}")
-
-        # Add ms.author metadata if available
-        if github_info.get('ms_author'):
-            lines.append(f"**ms.author:** `{github_info['ms_author']}`")
-
-        # Add nature of request for context
-        lines.extend([
-            "",
-            "## Change Type",
-            f"{item['nature_of_request']}",
-            "",
-        ])
-
-        lines.extend([
-            "## Changes Requested",
-            "",
-            "### Current Text to Replace",
-            "```",
-            item['text_to_change'],
-            "```",
-            "",
-            "### Proposed New Text",
-            "```",
-            item['new_text'],
-            "```",
-            "",
-            "---",
-            "",
-            "## Instructions for GitHub Copilot",
-            "",
-            "**Task:** Update the documentation file with the changes requested above.",
-            "",
-            "**Steps to complete:**",
-            "1. Locate the file containing the 'Current Text to Replace' shown above",
-            "2. Find the exact text that needs to be updated",
-            "3. Replace it with the 'Proposed New Text'",
-            "4. Ensure no other changes are made to the file",
-            "5. Commit the changes with a descriptive message",
-            "",
-            "**Important Notes:**",
-            "- Only change the specific text shown above",
-            "- Do not modify formatting, links, or other content",
-            "- Verify the replacement text fits naturally in context",
-            "",
-            "---",
-            "*This PR was created automatically from Azure DevOps work item AB#" + str(item['id']) + "*"
-        ])
-
-        return "\n".join(lines)
+# Removed EnhancedContentBuilders class - was specific to Azure DevOps
+# Use ContentBuilders class for generic GitHub automation instead
 
 
 # Compatibility functions for direct function access
