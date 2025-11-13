@@ -1,4 +1,4 @@
-# ![GitHub Pulse Logo](application/app_components/assets/pulse_logo_white_no_bkg_github.png)
+# ![GitHub Pulse Logo]("GitHub Pulse/app_components/assets/pulse_logo_white_no_bkg_github.png")
 
 A Python-based GUI application for GitHub automation workflows and AI assisted workflows.
 
@@ -6,11 +6,11 @@ A Python-based GUI application for GitHub automation workflows and AI assisted w
 > This project is currently in active development. Features and functionality may change frequently. Bug reports and contributions are welcome and encouraged!
 > Please be aware that some features may be incomplete or unstable.
 
-![GitHub Pulse img](application/app_components/assets/github_pulse_img.png)
+![GitHub Pulse img]("GitHub Pulse/app_components/assets/github_pulse_img.png")
 
 ## Pulse Workflow
 
-![Pulse Workflow img](application/app_components/assets/flow-diagram.png)
+![Pulse Workflow img]("GitHub Pulse/app_components/assets/flow-diagram.png")
 
 ## Project Structure
 
