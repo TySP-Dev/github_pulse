@@ -594,3 +594,60 @@ class WorkflowManager:
             import traceback
             traceback.print_exc()
             return []
+
+    def fetch_pr_files(self, repo_str: str, pr_number: int) -> List[Dict[str, Any]]:
+        """
+        Fetch the list of files changed in a pull request
+
+        Args:
+            repo_str: Repository string in format "owner/repo"
+            pr_number: Pull request number
+
+        Returns:
+            List of file dictionaries with keys: 'filename', 'status', 'additions', 'deletions', 'changes', 'patch'
+        """
+        try:
+            # Parse repository string
+            if '/' not in repo_str:
+                self.log(f"Invalid repository format: {repo_str}")
+                return []
+
+            owner, repo = repo_str.split('/', 1)
+
+            # Fetch PR files
+            url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
+            print(f"DEBUG: Fetching PR files from URL: {url}", flush=True)
+
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+
+            files_data = response.json()
+            print(f"DEBUG: Found {len(files_data)} files in PR #{pr_number}", flush=True)
+
+            files = []
+            for file_data in files_data:
+                files.append({
+                    'filename': file_data.get('filename', ''),
+                    'status': file_data.get('status', ''),  # added, removed, modified, renamed
+                    'additions': file_data.get('additions', 0),
+                    'deletions': file_data.get('deletions', 0),
+                    'changes': file_data.get('changes', 0),
+                    'patch': file_data.get('patch', ''),  # The actual diff patch
+                    'blob_url': file_data.get('blob_url', ''),
+                })
+
+            self.log(f"Fetched {len(files)} files for PR {repo_str} #{pr_number}")
+            return files
+
+        except requests.exceptions.RequestException as e:
+            self.log(f"Error fetching PR files for {repo_str} #{pr_number}: {e}")
+            print(f"DEBUG: RequestException occurred: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return []
+        except Exception as e:
+            self.log(f"Unexpected error fetching PR files: {e}")
+            print(f"DEBUG: Exception occurred: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return []

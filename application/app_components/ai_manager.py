@@ -3397,18 +3397,122 @@ class AIManager:
         """Create a LocalGitManager instance"""
         if not AI_PROVIDERS_AVAILABLE:
             return None
-        
+
         try:
             ai_logger = Logger(self.log)
             return LocalGitManager(ai_logger, github_token)
         except Exception as e:
             self.log(f"Error creating LocalGitManager: {e}")
             return None
-    
+
     def get_last_diff_content(self) -> str:
         """Get the last generated diff content for display in the UI"""
         return self.last_diff_content
-    
+
     def clear_diff_content(self):
         """Clear the stored diff content"""
         self.last_diff_content = ""
+
+    def generate_response(self, prompt: str, provider_name: str, config: dict) -> str:
+        """Generate a text response from an AI provider
+
+        Args:
+            prompt: The prompt/question to send to the AI
+            provider_name: Name of the AI provider ('chatgpt', 'claude', 'ollama', etc.)
+            config: Configuration dictionary containing API keys and settings
+
+        Returns:
+            str: The AI-generated response
+        """
+        try:
+            provider_name = provider_name.lower()
+
+            # OpenAI/ChatGPT
+            if provider_name in ['chatgpt', 'openai', 'gpt']:
+                api_key = config.get('OPENAI_API_KEY', '')
+                if not api_key:
+                    return "Error: OpenAI API key not configured"
+
+                try:
+                    import openai
+                    client = openai.OpenAI(api_key=api_key)
+
+                    response = client.chat.completions.create(
+                        model=config.get('OPENAI_MODEL', 'gpt-4'),
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant that analyzes GitHub pull requests and issues."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=2000,
+                        temperature=0.7
+                    )
+
+                    return response.choices[0].message.content.strip()
+
+                except Exception as e:
+                    self.log(f"Error calling OpenAI API: {e}")
+                    return f"Error calling OpenAI API: {str(e)}"
+
+            # Anthropic/Claude
+            elif provider_name in ['claude', 'anthropic']:
+                api_key = config.get('ANTHROPIC_API_KEY', '')
+                if not api_key:
+                    return "Error: Anthropic API key not configured"
+
+                try:
+                    import anthropic
+                    client = anthropic.Anthropic(api_key=api_key)
+
+                    response = client.messages.create(
+                        model=config.get('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022'),
+                        max_tokens=2000,
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ]
+                    )
+
+                    return response.content[0].text.strip()
+
+                except Exception as e:
+                    self.log(f"Error calling Anthropic API: {e}")
+                    return f"Error calling Anthropic API: {str(e)}"
+
+            # Ollama
+            elif provider_name == 'ollama':
+                ollama_url = config.get('OLLAMA_URL', 'http://localhost:11434')
+                ollama_model = config.get('OLLAMA_MODEL', 'llama2')
+
+                try:
+                    import requests
+
+                    # Normalize URL
+                    if not ollama_url.startswith('http'):
+                        ollama_url = f"http://{ollama_url}"
+
+                    # Remove trailing slash
+                    ollama_url = ollama_url.rstrip('/')
+
+                    api_url = f"{ollama_url}/api/generate"
+
+                    payload = {
+                        "model": ollama_model,
+                        "prompt": prompt,
+                        "stream": False
+                    }
+
+                    response = requests.post(api_url, json=payload, timeout=120)
+                    response.raise_for_status()
+
+                    result = response.json()
+                    return result.get('response', '').strip()
+
+                except Exception as e:
+                    self.log(f"Error calling Ollama API: {e}")
+                    return f"Error calling Ollama API: {str(e)}"
+
+            else:
+                return f"Error: Unknown AI provider '{provider_name}'"
+
+        except Exception as e:
+            self.log(f"Error in generate_response: {e}")
+            return f"Error generating response: {str(e)}"
