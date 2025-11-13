@@ -1,4 +1,4 @@
-# ![GitHub Pulse Logo](media/pulse_logo_white_no_bkg_github.png)
+# ![GitHub Pulse Logo](application/app_components/assets/pulse_logo_white_no_bkg_github.png)
 
 A Python-based GUI application for GitHub automation workflows and AI assisted workflows.
 
@@ -6,20 +6,27 @@ A Python-based GUI application for GitHub automation workflows and AI assisted w
 > This project is currently in active development. Features and functionality may change frequently. Bug reports and contributions are welcome and encouraged!
 > Please be aware that some features may be incomplete or unstable.
 
-![GitHub Pulse img](media/github_pulse_img.png)
+![GitHub Pulse img](assets/github_pulse_img.png)
 
 ## Pulse Workflow
 
-![Pulse Workflow img](media/flow-diagram.png)
+![Pulse Workflow img](assets/flow-diagram.png)
 
 ## Project Structure
 
 ```text
 github_pulse/
-├── application/              # Main application directory
+├── application/             # Main application directory
 │   ├── app.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
 │   └── app_components/      # Application modules
+│       ├── assets/          # Images and assets
+│       │   ├── flow-diagram.png              # Workflow diagram              
+│       │   ├── github_pulse_img.png          # GitHub Pulse image
+│       │   ├── pulse_logo_gray_no_bkg.png  # GitHub Pulse logo
+│       │   ├── pulse_logo_white_no_bkg_github.png          # Pulse logo
+│       │   ├── pulse_logo_white_no_bkg.png               # Pulse logo with background
+│       │   └── pulse_logo_white_w_black_bkg.png      # GitHub Pulse logo with background
 │       ├── __init__.py          # Package initializer
 │       ├── ai_manager.py           # AI provider integration
 │       ├── cache_manager.py        # Caching functionality
@@ -31,9 +38,9 @@ github_pulse/
 │       ├── settings_manager.py     # Settings management
 │       ├── utils.py                # Utility functions
 │       └── workflow.py             # Workflow processing
-├── media/                   # Images and assets
-├── README.md               # This file
-├── SETUP.md                # Setup guide
+├── assets/                   # Images and assets
+├── README.md               # Readme file
+├── SETUP.md                # This file
 └── LICENSE                 # License information
 ```
 

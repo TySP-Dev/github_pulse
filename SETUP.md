@@ -79,10 +79,17 @@ The project is organized as follows:
 
 ```text
 github_pulse/
-├── application/              # Main application directory
+├── application/             # Main application directory
 │   ├── app.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
 │   └── app_components/      # Application modules
+│       ├── assets/          # Images and assets
+│       │   ├── flow-diagram.png              # Workflow diagram              
+│       │   ├── github_pulse_img.png          # GitHub Pulse image
+│       │   ├── pulse_logo_gray_no_bkg.png  # GitHub Pulse logo
+│       │   ├── pulse_logo_white_no_bkg_github.png          # Pulse logo
+│       │   ├── pulse_logo_white_no_bkg.png               # Pulse logo with background
+│       │   └── pulse_logo_white_w_black_bkg.png      # GitHub Pulse logo with background
 │       ├── __init__.py          # Package initializer
 │       ├── ai_manager.py           # AI provider integration
 │       ├── cache_manager.py        # Caching functionality
@@ -94,7 +101,7 @@ github_pulse/
 │       ├── settings_manager.py     # Settings management
 │       ├── utils.py                # Utility functions
 │       └── workflow.py             # Workflow processing
-├── media/                   # Images and assets
+├── assets/                   # Images and assets
 ├── README.md               # Readme file
 ├── SETUP.md                # This file
 └── LICENSE                 # License information
