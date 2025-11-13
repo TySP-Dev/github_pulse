@@ -1,4 +1,4 @@
-# ![GitHub Pulse Logo]("GitHub Pulse/app_components/assets/pulse_logo_white_no_bkg_github.png")
+# ![GitHub Pulse Logo](GitHub_Pulse/app_components/assets/pulse_logo_white_no_bkg_github.png)
 
 A Python-based GUI application for GitHub automation workflows and AI assisted workflows.
 
@@ -6,17 +6,17 @@ A Python-based GUI application for GitHub automation workflows and AI assisted w
 > This project is currently in active development. Features and functionality may change frequently. Bug reports and contributions are welcome and encouraged!
 > Please be aware that some features may be incomplete or unstable.
 
-![GitHub Pulse img]("GitHub Pulse/app_components/assets/github_pulse_img.png")
+![GitHub Pulse img](GitHub_Pulse/app_components/assets/github_pulse_img.png)
 
 ## Pulse Workflow
 
-![Pulse Workflow img]("GitHub Pulse/app_components/assets/flow-diagram.png")
+![Pulse Workflow img](GitHub_Pulse/app_components/assets/flow-diagram.png)
 
 ## Project Structure
 
 ```text
 github_pulse/
-├── application/             # Main application directory
+├── GitHub_Pulse/             # Main application directory
 │   ├── app.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
 │   └── app_components/      # Application modules
@@ -55,7 +55,7 @@ github_pulse/
 1. **Clone the repository**
    ```bash
    git clone https://github.com/TySP-Dev/github_pulse.git
-   cd github_pulse/application
+   cd github_pulse/GitHub_Pulse
    ```
 
 2. **Create and activate virtual environment**

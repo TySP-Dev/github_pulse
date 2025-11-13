@@ -17,8 +17,8 @@ A Python-based GUI application for GitHub automation workflows.
 1. **Clone/Download the Repository**
 
    ```bash
-   git clone https://github.com/TySP-Dev/github_automation.git
-   cd github_automation/application
+   git clone https://github.com/TySP-Dev/github_pulse.git
+   cd github_pulse/GitHub_Pulse
    ```
 
 2. **Create Virtual Environment** (Recommended)
@@ -79,7 +79,7 @@ The project is organized as follows:
 
 ```text
 github_pulse/
-├── application/             # Main application directory
+├── GitHub_Pulse/             # Main application directory
 │   ├── app.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
 │   └── app_components/      # Application modules
