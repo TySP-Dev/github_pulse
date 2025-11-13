@@ -211,3 +211,6 @@ __marimo__/
 
 # Settings files
 config.json
+
+# Build
+build/
