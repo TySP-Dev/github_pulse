@@ -7,10 +7,7 @@ import flet as ft
 # Compatibility fix for Flet 0.28+ (Icons vs icons, Colors vs colors)
 ft.icons = ft.Icons
 ft.colors = ft.Colors
-import threading
-import subprocess
 from typing import Dict, Any, Optional
-import sys
 import os
 import asyncio
 
@@ -27,13 +24,7 @@ class SettingsDialog:
         self.entries = {}
         self.dialog_ref = ft.Ref[ft.AlertDialog]()
 
-        # Repository data
-        self.target_repos = []
-        self.forked_repos = []
-
         # Dropdown refs
-        self.target_repo_dropdown_ref = ft.Ref[ft.Dropdown]()
-        self.forked_repo_dropdown_ref = ft.Ref[ft.Dropdown]()
         self.detected_repos_dropdown_ref = ft.Ref[ft.Dropdown]()
         self.ollama_model_dropdown_ref = ft.Ref[ft.Dropdown]()
 
@@ -71,8 +62,6 @@ class SettingsDialog:
         """Initialize async operations"""
         await asyncio.sleep(0.1)
         await self._scan_repos_async()
-        await self._load_target_repos_async()
-        await self._load_user_forks_async()
 
     def _create_dialog(self) -> ft.AlertDialog:
         """Create the settings dialog"""
@@ -136,7 +125,7 @@ class SettingsDialog:
         controls = []
 
         # GitHub Configuration Section
-        controls.append(self._create_section_header("🐙 GitHub Configuration"))
+        controls.append(self._create_section_header("🐙 GitHub Personal Access Token"))
 
         # GitHub PAT
         github_pat = ft.TextField(
@@ -149,71 +138,6 @@ class SettingsDialog:
         )
         self.entries['GITHUB_PAT'] = github_pat
         controls.append(github_pat)
-
-        # Target Repository
-        controls.append(ft.Text("Target Repository", weight=ft.FontWeight.BOLD, size=14))
-        target_repo_row = ft.Row(
-            [
-                ft.Dropdown(
-                    ref=self.target_repo_dropdown_ref,
-                    label="Target Repository",
-                    value=self.config.get('GITHUB_REPO', ''),
-                    options=[],
-                    hint_text="Select or type repository",
-                    expand=True,
-                    on_change=lambda e: self._on_target_repo_search(e),
-                ),
-                ft.IconButton(
-                    icon=ft.icons.REFRESH,
-                    tooltip="Refresh",
-                    on_click=lambda e: self.page.run_task(self._refresh_target_repos_async),
-                ),
-                ft.IconButton(
-                    icon=ft.icons.SEARCH,
-                    tooltip="Search",
-                    on_click=lambda e: self.page.run_task(self._search_target_repos_async),
-                ),
-            ],
-            spacing=5,
-        )
-        controls.append(target_repo_row)
-        controls.append(ft.Text(
-            "ℹ️ Upstream repo where PRs will be created. Type to search all GitHub repos.",
-            size=12,
-            color="grey400",
-        ))
-
-        # Forked Repository
-        controls.append(ft.Text("Forked Repository", weight=ft.FontWeight.BOLD, size=14))
-        forked_repo_row = ft.Row(
-            [
-                ft.Dropdown(
-                    ref=self.forked_repo_dropdown_ref,
-                    label="Forked Repository",
-                    value=self.config.get('FORKED_REPO', ''),
-                    options=[],
-                    hint_text="Select your fork",
-                    expand=True,
-                ),
-                ft.IconButton(
-                    icon=ft.icons.REFRESH,
-                    tooltip="Refresh",
-                    on_click=lambda e: self.page.run_task(self._refresh_forked_repos_async),
-                ),
-                ft.IconButton(
-                    icon=ft.icons.DOWNLOAD,
-                    tooltip="Clone",
-                    on_click=self._clone_forked_repo,
-                ),
-            ],
-            spacing=5,
-        )
-        controls.append(forked_repo_row)
-        controls.append(ft.Text(
-            "ℹ️ Your fork where changes will be made. Leave empty to auto-detect from document URL.",
-            size=12,
-            color="grey400",
-        ))
 
         # General Options Section
         controls.append(self._create_section_header("⚙️ General Options"))
@@ -268,8 +192,7 @@ class SettingsDialog:
                 "💡 Repository Setup Guide:\n"
                 "   • Local Repo Path: Where your fork repos are cloned (e.g., C:\\git\\repos)\n"
                 "   • Detected Repos: Shows your local fork (e.g., yourname/repo)\n"
-                "   • Target Repository: Upstream repo for PRs (e.g., microsoft/repo)\n"
-                "   • Fork Workflow: Work on your fork locally, create PRs to upstream",
+                "   • Note: Target and Fork repositories are configured in the main GUI",
                 size=12,
                 color="grey400",
             ),
@@ -283,9 +206,7 @@ class SettingsDialog:
             content=ft.Text(
                 "💡 Getting Started:\n"
                 "1. Create a GitHub Personal Access Token\n"
-                "2. Configure GitHub repositories:\n"
-                "   • Target Repository: Where PRs will be created\n"
-                "   • Forked Repository: Your fork where changes are made\n"
+                "2. Configure GitHub repositories in the main GUI\n"
                 "3. Set Local Repo Path for automatic repository detection\n"
                 "4. Configure AI provider in the AI tab (optional)\n"
                 "5. Test your connection before processing items",
@@ -517,214 +438,6 @@ class SettingsDialog:
         except Exception as e:
             print(f"Error in _scan_repos_async: {e}")
 
-    async def _load_target_repos_async(self):
-        """Load target repos (with push/admin access) asynchronously"""
-        def load_repos():
-            try:
-                github_token = self.config.get('GITHUB_PAT', '')
-                if not github_token:
-                    return
-
-                from .workflow import GitHubRepoFetcher
-                repo_fetcher = GitHubRepoFetcher(github_token)
-                repos = repo_fetcher.fetch_repos_with_permissions(min_permission='push')
-                self.target_repos = repo_fetcher.get_repo_names(repos)
-
-                # Update UI on main thread
-                if self.target_repo_dropdown_ref.current:
-                    self.page.run_task(self._update_target_dropdown_async)
-
-            except Exception as e:
-                print(f"Error loading target repos: {e}")
-
-        await asyncio.to_thread(load_repos)
-
-    async def _update_target_dropdown_async(self):
-        """Update the target repository dropdown"""
-        try:
-            if not self.target_repo_dropdown_ref.current:
-                return
-
-            options = []
-            if self.target_repos:
-                options.append(ft.dropdown.Option("--- Your Repos (with edit access) ---", disabled=True))
-                options.extend([ft.dropdown.Option(repo) for repo in self.target_repos])
-
-            self.target_repo_dropdown_ref.current.options = options
-            self.page.update()
-
-        except Exception as e:
-            print(f"Error updating target dropdown: {e}")
-
-    async def _refresh_target_repos_async(self):
-        """Refresh target repositories"""
-        await self._load_target_repos_async()
-
-    async def _search_target_repos_async(self):
-        """Search for repositories on GitHub"""
-        if not self.target_repo_dropdown_ref.current:
-            return
-
-        query = self.target_repo_dropdown_ref.current.value.strip()
-        if not query:
-            return
-
-        def search_repos():
-            try:
-                github_token = self.config.get('GITHUB_PAT', '')
-                if not github_token:
-                    return
-
-                from .workflow import GitHubRepoFetcher
-                repo_fetcher = GitHubRepoFetcher(github_token)
-                repos = repo_fetcher.search_repositories(query, per_page=50)
-                search_results = repo_fetcher.get_repo_names(repos)
-
-                # Update UI
-                if self.target_repo_dropdown_ref.current:
-                    options = []
-                    if self.target_repos:
-                        options.append(ft.dropdown.Option("--- Your Repos (with edit access) ---", disabled=True))
-                        options.extend([ft.dropdown.Option(repo) for repo in self.target_repos])
-
-                    if search_results:
-                        options.append(ft.dropdown.Option(f"--- Search Results for \"{query}\" ---", disabled=True))
-                        options.extend([ft.dropdown.Option(repo) for repo in search_results])
-
-                    self.target_repo_dropdown_ref.current.options = options
-                    self.page.update()
-
-            except Exception as e:
-                print(f"Error searching repos: {e}")
-
-        await asyncio.to_thread(search_repos)
-
-    def _on_target_repo_search(self, e):
-        """Handle typing in target repo field for auto-search"""
-        # Debounce search - could be implemented with a timer
-        pass
-
-    async def _load_user_forks_async(self):
-        """Load user's GitHub forks asynchronously"""
-        def load_forks():
-            try:
-                github_token = self.config.get('GITHUB_PAT', '')
-                if not github_token:
-                    return
-
-                from .workflow import GitHubRepoFetcher
-                repo_fetcher = GitHubRepoFetcher(github_token)
-                repos = repo_fetcher.fetch_user_repos(repo_type='owner')
-                self.forked_repos = repo_fetcher.get_repo_names(repos)
-
-                # Update UI
-                if self.forked_repo_dropdown_ref.current:
-                    self.page.run_task(self._update_forked_dropdown_async)
-
-            except Exception as e:
-                print(f"Error loading user forks: {e}")
-
-        await asyncio.to_thread(load_forks)
-
-    async def _update_forked_dropdown_async(self):
-        """Update the forked repository dropdown with GitHub forks"""
-        try:
-            if not self.forked_repo_dropdown_ref.current:
-                return
-
-            options = []
-
-            # Add local repos
-            local_repo_path = self.config.get('LOCAL_REPO_PATH', '')
-            if local_repo_path:
-                try:
-                    from .utils import LocalRepositoryScanner
-                    local_repos = LocalRepositoryScanner.scan_local_repos(local_repo_path)
-                    if local_repos:
-                        options.append(ft.dropdown.Option("--- Local Repositories ---", disabled=True))
-                        options.extend([ft.dropdown.Option(repo) for repo in local_repos])
-                except Exception as e:
-                    print(f"Error scanning local repos: {e}")
-
-            # Add GitHub repos
-            if self.forked_repos:
-                options.append(ft.dropdown.Option("--- Your GitHub Repos ---", disabled=True))
-                options.extend([ft.dropdown.Option(repo) for repo in self.forked_repos])
-
-            self.forked_repo_dropdown_ref.current.options = options
-            self.page.update()
-
-        except Exception as e:
-            print(f"Error updating forked dropdown: {e}")
-
-    async def _refresh_forked_repos_async(self):
-        """Refresh the forked repositories dropdown"""
-        await self._load_user_forks_async()
-        await self._update_forked_dropdown_async()
-
-    def _clone_forked_repo(self, e):
-        """Clone the selected forked repository to the local repo path"""
-        if not self.forked_repo_dropdown_ref.current:
-            return
-
-        selected_repo = self.forked_repo_dropdown_ref.current.value.strip()
-
-        if not selected_repo or selected_repo.startswith('---'):
-            self._show_alert("Invalid Selection", "Please select a repository, not a section header.")
-            return
-
-        local_repo_path = self.config.get('LOCAL_REPO_PATH', '').strip()
-        if not local_repo_path:
-            self._show_alert("Local Path Not Configured", "Please configure the Local Repository Path in settings first.")
-            return
-
-        # Start clone in background
-        self.page.run_task(lambda: self._clone_repo_async(selected_repo, local_repo_path))
-
-    async def _clone_repo_async(self, repo_name: str, local_repo_path: str):
-        """Clone repository asynchronously"""
-        try:
-            os.makedirs(local_repo_path, exist_ok=True)
-
-            if '/' not in repo_name:
-                self._show_alert("Invalid Repository", "Repository must be in 'owner/repo' format.")
-                return
-
-            folder_name = repo_name.split('/')[-1]
-            target_path = os.path.join(local_repo_path, folder_name)
-
-            if os.path.exists(target_path):
-                # Show confirmation dialog
-                self._show_alert(
-                    "Directory Exists",
-                    f"The directory '{folder_name}' already exists. Clone may fail if it's already a git repository."
-                )
-                return
-
-            clone_url = f"https://github.com/{repo_name}.git"
-
-            # Show progress
-            self._show_alert("Cloning Repository", f"Cloning {repo_name}...\nThis may take a few moments.")
-
-            # Run git clone
-            result = await asyncio.to_thread(
-                subprocess.run,
-                ['git', 'clone', clone_url, target_path],
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-
-            if result.returncode == 0:
-                self._show_alert("Clone Successful", f"Successfully cloned {repo_name}!\n\nLocation: {folder_name}/")
-                await self._refresh_forked_repos_async()
-            else:
-                error_msg = result.stderr if result.stderr else result.stdout
-                self._show_alert("Clone Failed", f"Failed to clone {repo_name}.\n\nError:\n{error_msg}")
-
-        except Exception as e:
-            self._show_alert("Clone Error", f"An error occurred while cloning:\n{str(e)}")
-
     async def _scan_ollama_models_async(self):
         """Scan Ollama server for available models"""
         ollama_url = self.entries.get('OLLAMA_URL').value.strip() if 'OLLAMA_URL' in self.entries else ''
@@ -767,7 +480,6 @@ class SettingsDialog:
                         if len(model_names) > 10:
                             models_text += f"\n\n...and {len(model_names) - 10} more"
 
-                        self._show_alert("Models Found", f"Found {len(model_names)} model(s):\n\n{models_text}")
                     else:
                         self._show_alert("No Models Found", "No models found on the Ollama server.\n\nUse 'ollama pull <model>' to download models.")
 
@@ -857,10 +569,6 @@ class SettingsDialog:
                 config_values[key] = value
 
         # Handle dropdown values specially
-        if self.target_repo_dropdown_ref.current:
-            config_values['GITHUB_REPO'] = self.target_repo_dropdown_ref.current.value or ''
-        if self.forked_repo_dropdown_ref.current:
-            config_values['FORKED_REPO'] = self.forked_repo_dropdown_ref.current.value or ''
         if self.ollama_model_dropdown_ref.current:
             config_values['OLLAMA_MODEL'] = self.ollama_model_dropdown_ref.current.value or ''
 

@@ -1,5 +1,5 @@
 """
-Cache Manager for Work Items and UUF Items
+Cache Manager for GitHub PRs and Issues
 Stores fetched items in temporary cache to avoid reloading on every app start
 """
 
@@ -13,7 +13,7 @@ from hashlib import md5
 
 
 class CacheManager:
-    """Manages caching of work items and UUF items"""
+    """Manages caching of GitHub PRs and Issues"""
 
     def __init__(self, cache_duration_hours: int = 24):
         """
@@ -23,7 +23,7 @@ class CacheManager:
             cache_duration_hours: How long cache is valid (default 24 hours)
         """
         self.cache_duration_seconds = cache_duration_hours * 3600
-        self.cache_dir = Path(tempfile.gettempdir()) / "devops_to_github_cache"
+        self.cache_dir = Path(tempfile.gettempdir()) / "github_pulse_cache"
         self.cache_dir.mkdir(exist_ok=True)
 
     def _get_cache_key(self, source_type: str, identifier: str) -> str:
@@ -50,14 +50,14 @@ class CacheManager:
 
     def load_from_cache(self, source_type: str, identifier: str) -> Optional[List[Dict[str, Any]]]:
         """
-        Load work items from cache
+        Load GitHub items from cache
 
         Args:
-            source_type: 'azure_devops' or 'uuf'
-            identifier: query URL hash or config hash
+            source_type: 'github_prs', 'github_issues', 'target_prs', 'fork_prs', etc.
+            identifier: repository identifier or config hash
 
         Returns:
-            List of work items if cache is valid, None otherwise
+            List of items if cache is valid, None otherwise
         """
         if not self.is_cache_valid(source_type, identifier):
             return None
@@ -81,12 +81,12 @@ class CacheManager:
 
     def save_to_cache(self, source_type: str, identifier: str, items: List[Dict[str, Any]]) -> bool:
         """
-        Save work items to cache
+        Save GitHub items to cache
 
         Args:
-            source_type: 'azure_devops' or 'uuf'
-            identifier: query URL hash or config hash
-            items: List of work items to cache
+            source_type: 'github_prs', 'github_issues', 'target_prs', 'fork_prs', etc.
+            identifier: repository identifier or config hash
+            items: List of items to cache (PRs or Issues)
 
         Returns:
             True if successful, False otherwise

@@ -67,8 +67,6 @@ class MainGUI:
         self.diff_text_ref = ft.Ref[ft.TextField]()
         self.log_text_ref = ft.Ref[ft.TextField]()
         self.edit_button_ref = ft.Ref[ft.IconButton]()
-        self.prev_button_ref = ft.Ref[ft.IconButton]()
-        self.next_button_ref = ft.Ref[ft.IconButton]()
         self.go_button_ref = ft.Ref[ft.ElevatedButton]()
 
         # Mode and filter refs
@@ -83,6 +81,10 @@ class MainGUI:
 
         # DataTable ref for all items
         self.items_table_ref = ft.Ref[ft.DataTable]()
+
+        # All items display
+        self.all_items_container_ref = ft.Ref[ft.Column]()
+        self.item_detail_dialog_ref = ft.Ref[ft.AlertDialog]()
 
         # Sidebar state
         self.sidebar_visible = True
@@ -196,9 +198,10 @@ class MainGUI:
     async def _async_init(self):
         """Async initialization"""
         await asyncio.sleep(0.5)
-        await self._auto_load_cached_items()
         await self._load_custom_instructions()
         await self._init_load_repos()
+        # Auto-load cached items after repos are loaded
+        await self._auto_load_cached_items()
 
     def _toggle_sidebar(self, e):
         """Toggle sidebar visibility"""
@@ -335,6 +338,23 @@ class MainGUI:
                     expand=True,
                     on_change=self._on_workflow_item_selected,
                 ),
+                ft.Divider(height=10),
+                ft.Text("All Items", weight=ft.FontWeight.BOLD, size=14),
+                ft.Container(
+                    content=ft.Column(
+                        ref=self.all_items_container_ref,
+                        controls=[
+                            ft.Text("No items loaded", color=ft.colors.GREY_500, italic=True, text_align=ft.TextAlign.CENTER)
+                        ],
+                        spacing=10,
+                        scroll=ft.ScrollMode.AUTO,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    ),
+                    height=300,
+                    border=ft.border.all(1, ft.colors.OUTLINE),
+                    border_radius=8,
+                    padding=5,
+                ),
             ],
             spacing=10,
         )
@@ -431,20 +451,6 @@ class MainGUI:
         # Navigation buttons
         nav_buttons = ft.Row(
             [
-                ft.IconButton(
-                    ref=self.prev_button_ref,
-                    icon=ft.icons.ARROW_BACK,
-                    tooltip="Previous",
-                    on_click=self._previous_item,
-                    disabled=True,
-                ),
-                ft.IconButton(
-                    ref=self.next_button_ref,
-                    icon=ft.icons.ARROW_FORWARD,
-                    tooltip="Next",
-                    on_click=self._next_item,
-                    disabled=True,
-                ),
                 ft.Container(expand=True),
                 ft.ElevatedButton(
                     "Go",
@@ -623,14 +629,17 @@ class MainGUI:
         items_table = ft.DataTable(
             ref=self.items_table_ref,
             columns=[
+                ft.DataColumn(ft.Text("Repo")),
+                ft.DataColumn(ft.Text("Type")),
                 ft.DataColumn(ft.Text("ID")),
                 ft.DataColumn(ft.Text("Title")),
-                ft.DataColumn(ft.Text("Nature")),
-                ft.DataColumn(ft.Text("GitHub Repo")),
-                ft.DataColumn(ft.Text("ms.author")),
+                ft.DataColumn(ft.Text("Author")),
                 ft.DataColumn(ft.Text("Status")),
             ],
             rows=[],
+            border=ft.border.all(1, ft.colors.OUTLINE),
+            border_radius=8,
+            heading_row_color=ft.colors.BLUE_GREY_100,
         )
 
         set_current_button = ft.ElevatedButton(
@@ -706,6 +715,9 @@ class MainGUI:
         if self.workflow_item_dropdown_ref.current:
             self.workflow_item_dropdown_ref.current.options = []
             self.page.update()
+
+        # Auto-load cached items for the newly selected repos
+        self.page.run_task(self._auto_load_cached_items_on_repo_change)
 
     def _on_workflow_item_selected(self, e):
         """Handle workflow item selection"""
@@ -789,17 +801,373 @@ class MainGUI:
         # Implementation would populate fields with workflow item data
         pass
 
+    def _populate_all_items(self):
+        """Populate the all items list with all loaded PRs and Issues"""
+        if not self.all_items_container_ref.current:
+            return
+
+        # Collect all items from workflow_items
+        all_items = []
+        for key, items in self.workflow_items.items():
+            all_items.extend(items)
+
+        if not all_items:
+            self.all_items_container_ref.current.controls = [
+                ft.Text("No items loaded", color=ft.colors.GREY_500, italic=True)
+            ]
+        else:
+            # Sort by updated_at (most recent first)
+            all_items.sort(key=lambda x: x.updated_at if hasattr(x, 'updated_at') else '', reverse=True)
+
+            # Create item cards
+            cards = []
+            for item in all_items:
+                cards.append(self._create_item_card(item))
+
+            self.all_items_container_ref.current.controls = cards
+
+        self.page.update()
+
+    def _create_item_card(self, item):
+        """Create a card for a workflow item"""
+        # Determine repo source label
+        repo_label = "Target" if item.repo_source == "target" else "Fork"
+        repo_color = ft.colors.BLUE if item.repo_source == "target" else ft.colors.PURPLE
+
+        # Determine type label
+        type_label = "PR" if item.item_type == "pull_request" else "Issue"
+        type_color = ft.colors.GREEN if item.item_type == "pull_request" else ft.colors.ORANGE
+
+        # Create card
+        return ft.Container(
+            content=ft.Row(
+                [
+                    # Repo source badge
+                    ft.Container(
+                        content=ft.Text(repo_label, size=10, weight=ft.FontWeight.BOLD),
+                        bgcolor=repo_color,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        border_radius=4,
+                    ),
+                    # Type badge
+                    ft.Container(
+                        content=ft.Text(type_label, size=10, weight=ft.FontWeight.BOLD),
+                        bgcolor=type_color,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        border_radius=4,
+                    ),
+                    # Title
+                    ft.Text(
+                        f"#{item.number}: {item.title}",
+                        size=12,
+                        expand=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    # Select button
+                    ft.IconButton(
+                        icon=ft.icons.CHECK_CIRCLE_OUTLINE,
+                        icon_size=16,
+                        tooltip="Select as current item",
+                        on_click=lambda e, it=item: self._select_item_as_current(it),
+                    ),
+                    # View details button
+                    ft.IconButton(
+                        icon=ft.icons.OPEN_IN_NEW,
+                        icon_size=16,
+                        tooltip="View details",
+                        on_click=lambda e, it=item: self._show_item_detail(it),
+                    ),
+                ],
+                spacing=8,
+                alignment=ft.MainAxisAlignment.START,
+            ),
+            padding=8,
+            border=ft.border.all(1, ft.colors.OUTLINE),
+            border_radius=4,
+            bgcolor=ft.colors.GREY_800,
+        )
+
+    def _populate_all_items_table(self):
+        """Populate the DataTable in the All Items tab with all loaded PRs and Issues"""
+        if not self.items_table_ref.current:
+            return
+
+        # Collect all items from workflow_items
+        all_items = []
+        for key, items in self.workflow_items.items():
+            all_items.extend(items)
+
+        if not all_items:
+            self.items_table_ref.current.rows = []
+        else:
+            # Sort by updated_at (most recent first)
+            all_items.sort(key=lambda x: x.updated_at if hasattr(x, 'updated_at') else '', reverse=True)
+
+            # Create table rows
+            rows = []
+            for item in all_items:
+                # Determine repo source and type
+                repo_source = "Target" if item.repo_source == "target" else "Fork"
+                item_type = "PR" if item.item_type == "pull_request" else "Issue"
+
+                # Get author (item.author is already a string, not a dict)
+                author = item.author if item.author else 'Unknown'
+
+                # Get state
+                state = item.state if hasattr(item, 'state') else 'unknown'
+
+                # Get repo name
+                config = self.config_manager.get_config()
+                if item.repo_source == "target":
+                    repo_name = config.get('GITHUB_REPO', '')
+                else:
+                    repo_name = config.get('FORKED_REPO', '')
+
+                # Create row with clickable button
+                row = ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(f"{repo_source}: {repo_name.split('/')[-1] if '/' in repo_name else repo_name}", size=12)),
+                        ft.DataCell(ft.Text(item_type, size=12)),
+                        ft.DataCell(ft.Text(f"#{item.number}", size=12)),
+                        ft.DataCell(ft.Text(item.title[:50] + "..." if len(item.title) > 50 else item.title, size=12)),
+                        ft.DataCell(ft.Text(author, size=12)),
+                        ft.DataCell(ft.Text(state, size=12)),
+                    ],
+                    on_select_changed=lambda e, it=item: self._show_item_detail(it) if e.control.selected else None,
+                )
+                rows.append(row)
+
+            self.items_table_ref.current.rows = rows
+
+        self.page.update()
+
+    def _select_item_as_current(self, item):
+        """Select an item as the current workflow item in the dropdown"""
+        if not self.workflow_item_dropdown_ref.current:
+            return
+
+        # Update filters to match the selected item
+        # Set repo source (target/fork)
+        if self.repo_source_ref.current:
+            self.repo_source_ref.current.value = item.repo_source
+
+        # Set item type (pull_request/issue)
+        if self.item_type_ref.current:
+            self.item_type_ref.current.value = item.item_type
+
+        # Re-filter the workflow items with the new settings
+        self._filter_workflow_items()
+
+        # Set the dropdown value to this item's title
+        self.workflow_item_dropdown_ref.current.value = item.title
+
+        # Display the item
+        self._display_workflow_item(item)
+
+        # Update the page
+        self.page.update()
+
+        # Show confirmation
+        item_type_label = "PR" if item.item_type == "pull_request" else "Issue"
+        repo_label = "Target" if item.repo_source == "target" else "Fork"
+        self._show_snackbar(f"Selected {item_type_label} from {repo_label}: {item.title}", error=False)
+
+    def _show_item_detail(self, item):
+        """Show detail dialog for a workflow item"""
+        # Get repo string for fetching comments
+        config = self.config_manager.get_config()
+        if item.repo_source == "target":
+            repo_str = config.get('GITHUB_REPO', '')
+        else:
+            repo_str = config.get('FORKED_REPO', '')
+
+        # Build the dialog
+        dialog = self._build_item_detail_dialog(item, repo_str)
+
+        # Use Flet 0.28+ API: page.open() instead of page.dialog
+        self.page.open(dialog)
+
+    def _build_item_detail_dialog(self, item, repo_str):
+        """Build the detail dialog with tabs for Main (Preview) and System (extracted data)"""
+
+        # Get repo name for display
+        config = self.config_manager.get_config()
+        if item.repo_source == "target":
+            repo_name = config.get('GITHUB_REPO', '')
+        else:
+            repo_name = config.get('FORKED_REPO', '')
+
+        # Create header with repo and item info
+        header = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.icons.SOURCE, size=16),
+                    ft.Text(repo_name, size=12, weight=ft.FontWeight.BOLD),
+                    ft.Container(
+                        content=ft.Text(
+                            "PR" if item.item_type == "pull_request" else "Issue",
+                            size=10,
+                            color=ft.colors.WHITE,
+                        ),
+                        bgcolor=ft.colors.GREEN if item.item_type == "pull_request" else ft.colors.ORANGE,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        border_radius=4,
+                    ),
+                    ft.Text(f"#{item.number}", size=12, color=ft.colors.GREY_400),
+                ], spacing=8),
+                ft.Text(item.title, size=14, weight=ft.FontWeight.BOLD),
+                ft.Row([
+                    ft.Text(
+                        f"by @{item.author if item.author else 'Unknown'}",
+                        size=11,
+                        color=ft.colors.GREY_400,
+                    ),
+                    ft.Text(
+                        f"• {item.state}",
+                        size=11,
+                        color=ft.colors.GREEN if item.state == "open" else ft.colors.PURPLE,
+                    ),
+                ], spacing=5),
+            ], spacing=5),
+            padding=10,
+            bgcolor=ft.colors.GREY_900,
+            border_radius=8,
+        )
+
+        # Create body preview
+        body_preview = ft.Container(
+            content=ft.Column([
+                ft.Text("Description", size=12, weight=ft.FontWeight.BOLD),
+                ft.Container(
+                    content=ft.Text(
+                        item.body if item.body else "No description provided",
+                        size=11,
+                        selectable=True,
+                    ),
+                    padding=10,
+                    border=ft.border.all(1, ft.colors.OUTLINE),
+                    border_radius=4,
+                    bgcolor=ft.colors.GREY_900,
+                ),
+            ], spacing=5),
+        )
+
+        # Fetch comments
+        comments = []
+        if repo_str:
+            try:
+                workflow_manager = self._get_workflow_manager()
+                comments = workflow_manager.fetch_comments(repo_str, item.number, item.item_type == "pull_request")
+                print(f"Fetched {len(comments)} comments for {item.item_type} #{item.number}")
+            except Exception as e:
+                print(f"Error fetching comments: {e}")
+                if self.logger:
+                    self.logger.log(f"Error fetching comments: {e}")
+
+        # Build comments display
+        comments_widgets = []
+        if comments:
+            for comment in comments:
+                comments_widgets.append(
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Row([
+                                    ft.Text(f"@{comment['user']}", weight=ft.FontWeight.BOLD, size=12),
+                                    ft.Text(comment['created_at'][:10] if comment.get('created_at') else '', size=10, color=ft.colors.GREY_600),
+                                ]),
+                                ft.Text(comment['body'], size=11, selectable=True),
+                            ],
+                            spacing=5,
+                        ),
+                        padding=8,
+                        margin=ft.margin.only(bottom=8),
+                        border=ft.border.all(1, ft.colors.OUTLINE),
+                        border_radius=4,
+                        bgcolor=ft.colors.GREY_800,
+                    )
+                )
+        else:
+            comments_widgets.append(ft.Text("No comments yet", italic=True, color=ft.colors.GREY_500, size=11))
+
+        # Comments section
+        comments_section = ft.Container(
+            content=ft.Column([
+                ft.Text(f"Comments ({len(comments)})", size=12, weight=ft.FontWeight.BOLD),
+                ft.Column(
+                    controls=comments_widgets,
+                    spacing=5,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            ], spacing=5),
+        )
+
+        # Main content (no tabs, just single scrollable content)
+        main_content = ft.Container(
+            content=ft.Column(
+                [
+                    header,
+                    body_preview,
+                    comments_section,
+                    ft.Row([
+                        ft.ElevatedButton(
+                            "Open in GitHub",
+                            icon=ft.icons.OPEN_IN_BROWSER,
+                            on_click=lambda e: self.page.launch_url(item.url),
+                        ),
+                        ft.TextButton(
+                            "Copy URL",
+                            icon=ft.icons.COPY,
+                            on_click=lambda e: self._copy_to_clipboard(item.url),
+                        ),
+                    ], spacing=10),
+                ],
+                spacing=15,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            padding=10,
+            expand=True,
+        )
+
+        # Create close handler that will close this specific dialog
+        def close_handler(e):
+            self.page.close(dialog)
+
+        # Create dialog
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"{item.item_type.upper()} #{item.number}: {item.title}"),
+            content=ft.Container(
+                content=main_content,
+                width=800,
+                height=600,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=close_handler),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        return dialog
+
+    def _copy_to_clipboard(self, text):
+        """Copy text to clipboard and show notification"""
+        self.page.set_clipboard(text)
+        self._show_snackbar("URL copied to clipboard!", error=False)
+
+    def _get_workflow_manager(self):
+        """Get or create a WorkflowManager instance"""
+        github_token = self.config_manager.get_config().get('GITHUB_PAT', '')
+        if not github_token:
+            raise ValueError("GitHub token not configured")
+
+        from .workflow import WorkflowManager
+        return WorkflowManager(github_token, self.logger)
+
     def _previous_item(self, e):
         """Navigate to previous item"""
         if self.current_item_index > 0:
             self.current_item_index -= 1
-            self._display_current_item()
-            self._update_navigation_buttons()
-
-    def _next_item(self, e):
-        """Navigate to next item"""
-        if self.current_item_index < len(self.current_work_items) - 1:
-            self.current_item_index += 1
             self._display_current_item()
             self._update_navigation_buttons()
 
@@ -875,14 +1243,172 @@ class MainGUI:
     # ===== Async Operations =====
 
     async def _auto_load_cached_items(self):
-        """Auto-load cached items on startup"""
-        try:
-            # Try to load from cache
-            if self.cache_manager:
-                # Implementation would load cached items
-                pass
-        except Exception as e:
-            print(f"Error auto-loading cached items: {e}")
+        """Auto-load cached items on startup if available"""
+        print("=" * 60)
+        print("🔄 Auto-loading cached items on startup...")
+        print("=" * 60)
+
+        def load_cached():
+            try:
+                # Get configured repos
+                target_repo = self.target_repo_dropdown_ref.current.value if self.target_repo_dropdown_ref.current else None
+                forked_repo = self.forked_repo_dropdown_ref.current.value if self.forked_repo_dropdown_ref.current else None
+
+                if not target_repo and not forked_repo:
+                    print("No repositories configured, skipping auto-load")
+                    return
+
+                github_token = self.config_manager.get_config().get('GITHUB_PAT', '')
+                if not github_token:
+                    print("No GitHub token configured, skipping auto-load")
+                    return
+
+                items_loaded = False
+
+                # Try to load target repo items from cache
+                if target_repo and not target_repo.startswith('---') and '/' in target_repo:
+                    cached_prs = self.cache_manager.load_from_cache('target_prs', target_repo) if self.cache_manager else None
+                    cached_issues = self.cache_manager.load_from_cache('target_issues', target_repo) if self.cache_manager else None
+
+                    if cached_prs is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['target_prs'] = [WorkflowItem.from_dict(item) for item in cached_prs]
+                        print(f"✓ Auto-loaded {len(cached_prs)} PRs from cache (target)")
+                        if self.logger:
+                            self.logger.log(f"✅ Auto-loaded {len(cached_prs)} PRs from cache (target)")
+                        items_loaded = True
+
+                    if cached_issues is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['target_issues'] = [WorkflowItem.from_dict(item) for item in cached_issues]
+                        print(f"✓ Auto-loaded {len(cached_issues)} issues from cache (target)")
+                        if self.logger:
+                            self.logger.log(f"✅ Auto-loaded {len(cached_issues)} issues from cache (target)")
+                        items_loaded = True
+
+                # Try to load fork repo items from cache
+                if forked_repo and not forked_repo.startswith('---') and '/' in forked_repo:
+                    cached_fork_prs = self.cache_manager.load_from_cache('fork_prs', forked_repo) if self.cache_manager else None
+                    cached_fork_issues = self.cache_manager.load_from_cache('fork_issues', forked_repo) if self.cache_manager else None
+
+                    if cached_fork_prs is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['fork_prs'] = [WorkflowItem.from_dict(item) for item in cached_fork_prs]
+                        print(f"✓ Auto-loaded {len(cached_fork_prs)} PRs from cache (fork)")
+                        if self.logger:
+                            self.logger.log(f"✅ Auto-loaded {len(cached_fork_prs)} PRs from cache (fork)")
+                        items_loaded = True
+
+                    if cached_fork_issues is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['fork_issues'] = [WorkflowItem.from_dict(item) for item in cached_fork_issues]
+                        print(f"✓ Auto-loaded {len(cached_fork_issues)} issues from cache (fork)")
+                        if self.logger:
+                            self.logger.log(f"✅ Auto-loaded {len(cached_fork_issues)} issues from cache (fork)")
+                        items_loaded = True
+
+                if items_loaded:
+                    # Filter and update UI
+                    self.page.run_task(self._filter_workflow_items_async)
+
+                    # Populate all items list in sidebar
+                    self._populate_all_items()
+
+                    # Populate all items table in the All Items tab
+                    self._populate_all_items_table()
+
+                    print("✅ Auto-load completed successfully")
+                else:
+                    print("No cached items found, waiting for manual load")
+
+            except Exception as e:
+                print(f"Error during auto-load: {e}")
+                if self.logger:
+                    self.logger.log(f"Error during auto-load: {e}")
+
+        await asyncio.to_thread(load_cached)
+
+    async def _auto_load_cached_items_on_repo_change(self):
+        """Auto-load cached items when repository selection changes"""
+        print("🔄 Repository changed - checking for cached items...")
+
+        def load_cached():
+            try:
+                # Get configured repos
+                target_repo = self.target_repo_dropdown_ref.current.value if self.target_repo_dropdown_ref.current else None
+                forked_repo = self.forked_repo_dropdown_ref.current.value if self.forked_repo_dropdown_ref.current else None
+
+                github_token = self.config_manager.get_config().get('GITHUB_PAT', '')
+                if not github_token:
+                    print("No GitHub token configured")
+                    return
+
+                items_loaded = False
+
+                # Try to load target repo items from cache
+                if target_repo and not target_repo.startswith('---') and '/' in target_repo:
+                    cached_prs = self.cache_manager.load_from_cache('target_prs', target_repo) if self.cache_manager else None
+                    cached_issues = self.cache_manager.load_from_cache('target_issues', target_repo) if self.cache_manager else None
+
+                    if cached_prs is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['target_prs'] = [WorkflowItem.from_dict(item) for item in cached_prs]
+                        print(f"✓ Loaded {len(cached_prs)} cached PRs for target: {target_repo}")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_prs)} cached PRs for target: {target_repo}")
+                        items_loaded = True
+
+                    if cached_issues is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['target_issues'] = [WorkflowItem.from_dict(item) for item in cached_issues]
+                        print(f"✓ Loaded {len(cached_issues)} cached issues for target: {target_repo}")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_issues)} cached issues for target: {target_repo}")
+                        items_loaded = True
+
+                # Try to load fork repo items from cache
+                if forked_repo and not forked_repo.startswith('---') and '/' in forked_repo:
+                    cached_fork_prs = self.cache_manager.load_from_cache('fork_prs', forked_repo) if self.cache_manager else None
+                    cached_fork_issues = self.cache_manager.load_from_cache('fork_issues', forked_repo) if self.cache_manager else None
+
+                    if cached_fork_prs is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['fork_prs'] = [WorkflowItem.from_dict(item) for item in cached_fork_prs]
+                        print(f"✓ Loaded {len(cached_fork_prs)} cached PRs for fork: {forked_repo}")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_fork_prs)} cached PRs for fork: {forked_repo}")
+                        items_loaded = True
+
+                    if cached_fork_issues is not None:
+                        from .workflow import WorkflowItem
+                        self.workflow_items['fork_issues'] = [WorkflowItem.from_dict(item) for item in cached_fork_issues]
+                        print(f"✓ Loaded {len(cached_fork_issues)} cached issues for fork: {forked_repo}")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_fork_issues)} cached issues for fork: {forked_repo}")
+                        items_loaded = True
+
+                if items_loaded:
+                    # Filter and update UI
+                    self.page.run_task(self._filter_workflow_items_async)
+
+                    # Populate all items list in sidebar
+                    self._populate_all_items()
+
+                    # Populate all items table in the All Items tab
+                    self._populate_all_items_table()
+
+                    print("✅ Cached items loaded for selected repositories")
+                    if self.logger:
+                        self.logger.log("✅ Cached items loaded for selected repositories")
+                else:
+                    print("No cached items found for selected repositories")
+
+            except Exception as e:
+                print(f"Error loading cached items on repo change: {e}")
+                if self.logger:
+                    self.logger.log(f"Error loading cached items on repo change: {e}")
+
+        await asyncio.to_thread(load_cached)
 
     async def _load_custom_instructions(self):
         """Load custom instructions from config"""
@@ -949,8 +1475,178 @@ class MainGUI:
 
     async def _search_target_repos_async(self):
         """Search for repositories on GitHub"""
-        # Implementation would search GitHub repos
-        pass
+        # Create search dialog
+        search_input = ft.TextField(
+            label="Search for repository",
+            hint_text="Enter owner/repo or search term",
+            expand=True,
+            autofocus=True,
+        )
+
+        results_list = ft.ListView(
+            expand=True,
+            spacing=5,
+            padding=10,
+        )
+
+        def perform_search(e):
+            search_term = search_input.value.strip()
+            if not search_term:
+                return
+
+            # Clear previous results
+            results_list.controls.clear()
+            results_list.controls.append(
+                ft.Text("Searching...", color=ft.colors.GREY_400, italic=True)
+            )
+            self.page.update()
+
+            # Search GitHub
+            try:
+                github_token = self.config_manager.get_config().get('GITHUB_PAT', '')
+                if not github_token:
+                    results_list.controls.clear()
+                    results_list.controls.append(
+                        ft.Text("GitHub token not configured", color=ft.colors.RED)
+                    )
+                    self.page.update()
+                    return
+
+                from .workflow import GitHubRepoFetcher
+                repo_fetcher = GitHubRepoFetcher(github_token, self.logger)
+
+                # Check if it's a direct repo reference (owner/repo)
+                if '/' in search_term and len(search_term.split('/')) == 2:
+                    # Try to get the specific repo
+                    repos = repo_fetcher.search_repositories(search_term, per_page=1)
+                    if repos:
+                        results_list.controls.clear()
+                        for repo in repos:
+                            repo_name = repo_fetcher.get_repo_names([repo])[0] if repo_fetcher.get_repo_names([repo]) else None
+                            if repo_name:
+                                results_list.controls.append(
+                                    self._create_repo_result_item(repo_name, repo, search_dialog)
+                                )
+                    else:
+                        results_list.controls.clear()
+                        results_list.controls.append(
+                            ft.Text("Repository not found or you don't have access", color=ft.colors.ORANGE)
+                        )
+                else:
+                    # Search for repos
+                    repos = repo_fetcher.search_repositories(search_term, per_page=10)
+                    results_list.controls.clear()
+
+                    if repos:
+                        for repo in repos:
+                            repo_name = repo_fetcher.get_repo_names([repo])[0] if repo_fetcher.get_repo_names([repo]) else None
+                            if repo_name:
+                                results_list.controls.append(
+                                    self._create_repo_result_item(repo_name, repo, search_dialog)
+                                )
+                    else:
+                        results_list.controls.append(
+                            ft.Text("No repositories found", color=ft.colors.GREY_400)
+                        )
+
+                self.page.update()
+
+            except Exception as ex:
+                results_list.controls.clear()
+                results_list.controls.append(
+                    ft.Text(f"Error searching: {str(ex)}", color=ft.colors.RED)
+                )
+                self.page.update()
+
+        # Create dialog
+        def close_dialog(e):
+            self.page.close(search_dialog)
+
+        search_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Search GitHub Repositories"),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        search_input,
+                        ft.IconButton(
+                            icon=ft.icons.SEARCH,
+                            tooltip="Search",
+                            on_click=perform_search,
+                        ),
+                    ]),
+                    ft.Divider(),
+                    results_list,
+                ], spacing=10),
+                width=600,
+                height=400,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dialog),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        # Handle Enter key in search input
+        search_input.on_submit = perform_search
+
+        self.page.open(search_dialog)
+
+    def _create_repo_result_item(self, repo_name, repo_data, dialog):
+        """Create a repository result item"""
+        # Get repo description
+        description = repo_data.get('description', 'No description')
+        if not description:
+            description = 'No description'
+
+        # Get visibility
+        is_private = repo_data.get('private', False)
+        visibility_text = "Private" if is_private else "Public"
+        visibility_color = ft.colors.ORANGE if is_private else ft.colors.GREEN
+
+        def select_repo(e):
+            # Add to dropdown options if not already there
+            if self.target_repo_dropdown_ref.current:
+                current_options = [opt.key for opt in self.target_repo_dropdown_ref.current.options]
+                if repo_name not in current_options:
+                    self.target_repo_dropdown_ref.current.options.append(
+                        ft.dropdown.Option(repo_name)
+                    )
+
+                # Select this repo
+                self.target_repo_dropdown_ref.current.value = repo_name
+
+                # Save to config
+                config = self.config_manager.get_config()
+                config['GITHUB_REPO'] = repo_name
+                self.config_manager.save_configuration(config)
+
+                self.page.update()
+
+            # Close dialog
+            self.page.close(dialog)
+            self._show_snackbar(f"Selected repository: {repo_name}", error=False)
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text(repo_name, weight=ft.FontWeight.BOLD, size=14),
+                    ft.Container(
+                        content=ft.Text(visibility_text, size=10, color=ft.colors.WHITE),
+                        bgcolor=visibility_color,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        border_radius=4,
+                    ),
+                ], spacing=10),
+                ft.Text(description, size=12, color=ft.colors.GREY_400),
+            ], spacing=5),
+            padding=10,
+            border=ft.border.all(1, ft.colors.OUTLINE),
+            border_radius=4,
+            bgcolor=ft.colors.GREY_800,
+            on_click=select_repo,
+            ink=True,
+        )
 
     async def _load_forked_repos_async(self):
         """Load forked repositories"""
@@ -1020,13 +1716,26 @@ class MainGUI:
 
     async def _load_workflow_items_async(self):
         """Load workflow items (PRs/Issues)"""
-        print("=" * 60)
-        print("🔄 Load Items button clicked!")
-        print("=" * 60)
-        if self.logger:
-            self.logger.log("=" * 60)
-            self.logger.log("🔄 Load Items button clicked - starting workflow item load")
-            self.logger.log("=" * 60)
+        # Check if items are already loaded to determine if this is a refresh
+        items_already_loaded = any(len(items) > 0 for items in self.workflow_items.values())
+        force_refresh = items_already_loaded
+
+        if force_refresh:
+            print("=" * 60)
+            print("🔄 Refreshing Items (forcing API fetch)...")
+            print("=" * 60)
+            if self.logger:
+                self.logger.log("=" * 60)
+                self.logger.log("🔄 Refreshing Items - forcing fresh fetch from GitHub API")
+                self.logger.log("=" * 60)
+        else:
+            print("=" * 60)
+            print("🔄 Load Items button clicked!")
+            print("=" * 60)
+            if self.logger:
+                self.logger.log("=" * 60)
+                self.logger.log("🔄 Load Items button clicked - starting workflow item load")
+                self.logger.log("=" * 60)
 
         def load_items():
             try:
@@ -1068,10 +1777,39 @@ class MainGUI:
                     if self.logger:
                         self.logger.log(f"📥 Loading PRs and issues from target repo: {target_repo}")
 
-                    print(f"Calling workflow_manager.fetch_pull_requests('{target_repo}')...")
-                    self.workflow_items['target_prs'] = workflow_manager.fetch_pull_requests(target_repo)
-                    print(f"Calling workflow_manager.fetch_issues('{target_repo}')...")
-                    self.workflow_items['target_issues'] = workflow_manager.fetch_issues(target_repo)
+                    # Try to load from cache first (unless forcing refresh)
+                    cached_prs = None if force_refresh else (self.cache_manager.load_from_cache('target_prs', target_repo) if self.cache_manager else None)
+                    cached_issues = None if force_refresh else (self.cache_manager.load_from_cache('target_issues', target_repo) if self.cache_manager else None)
+
+                    if cached_prs is not None and not force_refresh:
+                        # Convert cached dicts back to WorkflowItem objects
+                        from .workflow import WorkflowItem
+                        self.workflow_items['target_prs'] = [WorkflowItem.from_dict(item) for item in cached_prs]
+                        print(f"✓ Loaded {len(cached_prs)} PRs from cache")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_prs)} PRs from cache")
+                    else:
+                        print(f"Calling workflow_manager.fetch_pull_requests('{target_repo}')...")
+                        self.workflow_items['target_prs'] = workflow_manager.fetch_pull_requests(target_repo, repo_source='target')
+                        # Convert to dicts and save to cache
+                        if self.cache_manager:
+                            items_as_dicts = [item.to_dict() for item in self.workflow_items['target_prs']]
+                            self.cache_manager.save_to_cache('target_prs', target_repo, items_as_dicts)
+
+                    if cached_issues is not None and not force_refresh:
+                        # Convert cached dicts back to WorkflowItem objects
+                        from .workflow import WorkflowItem
+                        self.workflow_items['target_issues'] = [WorkflowItem.from_dict(item) for item in cached_issues]
+                        print(f"✓ Loaded {len(cached_issues)} issues from cache")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_issues)} issues from cache")
+                    else:
+                        print(f"Calling workflow_manager.fetch_issues('{target_repo}')...")
+                        self.workflow_items['target_issues'] = workflow_manager.fetch_issues(target_repo, repo_source='target')
+                        # Convert to dicts and save to cache
+                        if self.cache_manager:
+                            items_as_dicts = [item.to_dict() for item in self.workflow_items['target_issues']]
+                            self.cache_manager.save_to_cache('target_issues', target_repo, items_as_dicts)
 
                     pr_count = len(self.workflow_items.get('target_prs', []))
                     issue_count = len(self.workflow_items.get('target_issues', []))
@@ -1088,13 +1826,50 @@ class MainGUI:
                 if forked_repo and not forked_repo.startswith('---') and '/' in forked_repo:
                     if self.logger:
                         self.logger.log(f"Loading PRs and issues from forked repo: {forked_repo}")
-                    self.workflow_items['fork_prs'] = workflow_manager.fetch_pull_requests(forked_repo)
-                    self.workflow_items['fork_issues'] = workflow_manager.fetch_issues(forked_repo)
+
+                    # Try to load from cache first (unless forcing refresh)
+                    cached_fork_prs = None if force_refresh else (self.cache_manager.load_from_cache('fork_prs', forked_repo) if self.cache_manager else None)
+                    cached_fork_issues = None if force_refresh else (self.cache_manager.load_from_cache('fork_issues', forked_repo) if self.cache_manager else None)
+
+                    if cached_fork_prs is not None and not force_refresh:
+                        # Convert cached dicts back to WorkflowItem objects
+                        from .workflow import WorkflowItem
+                        self.workflow_items['fork_prs'] = [WorkflowItem.from_dict(item) for item in cached_fork_prs]
+                        print(f"✓ Loaded {len(cached_fork_prs)} PRs from cache (fork)")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_fork_prs)} PRs from cache (fork)")
+                    else:
+                        self.workflow_items['fork_prs'] = workflow_manager.fetch_pull_requests(forked_repo, repo_source='fork')
+                        # Convert to dicts and save to cache
+                        if self.cache_manager:
+                            items_as_dicts = [item.to_dict() for item in self.workflow_items['fork_prs']]
+                            self.cache_manager.save_to_cache('fork_prs', forked_repo, items_as_dicts)
+
+                    if cached_fork_issues is not None and not force_refresh:
+                        # Convert cached dicts back to WorkflowItem objects
+                        from .workflow import WorkflowItem
+                        self.workflow_items['fork_issues'] = [WorkflowItem.from_dict(item) for item in cached_fork_issues]
+                        print(f"✓ Loaded {len(cached_fork_issues)} issues from cache (fork)")
+                        if self.logger:
+                            self.logger.log(f"✅ Loaded {len(cached_fork_issues)} issues from cache (fork)")
+                    else:
+                        self.workflow_items['fork_issues'] = workflow_manager.fetch_issues(forked_repo, repo_source='fork')
+                        # Convert to dicts and save to cache
+                        if self.cache_manager:
+                            items_as_dicts = [item.to_dict() for item in self.workflow_items['fork_issues']]
+                            self.cache_manager.save_to_cache('fork_issues', forked_repo, items_as_dicts)
+
                     if self.logger:
                         self.logger.log(f"Loaded {len(self.workflow_items.get('fork_prs', []))} PRs and {len(self.workflow_items.get('fork_issues', []))} issues from forked repo")
 
                 # Filter and update UI
                 self.page.run_task(self._filter_workflow_items_async)
+
+                # Populate all items list in sidebar
+                self._populate_all_items()
+
+                # Populate all items table in the All Items tab
+                self._populate_all_items_table()
 
             except Exception as e:
                 if self.logger:
@@ -1135,18 +1910,6 @@ class MainGUI:
 
         self.page.update()
         self._update_navigation_buttons()
-
-    def _update_navigation_buttons(self):
-        """Update navigation button states"""
-        if self.prev_button_ref.current:
-            self.prev_button_ref.current.disabled = (self.current_item_index == 0)
-
-        if self.next_button_ref.current:
-            self.next_button_ref.current.disabled = (
-                self.current_item_index >= len(self.current_work_items) - 1
-            )
-
-        self.page.update()
 
     def update_status(self, message: str):
         """Update status message"""

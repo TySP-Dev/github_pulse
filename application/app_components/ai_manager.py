@@ -1479,6 +1479,9 @@ Current file content:
 class GitHubCopilotProvider(AIProvider):
     """GitHub Copilot provider using GitHub Models API"""
 
+    # GitHub Models API endpoint
+    GITHUB_MODELS_API_URL = "https://models.inference.ai.azure.com/chat/completions"
+
     def make_change(self, file_content: str, old_text: str, new_text: str, file_path: str, custom_instructions: str = None) -> Optional[str]:
         """Use diff-based approach for surgical edits"""
         
@@ -1501,11 +1504,11 @@ class GitHubCopilotProvider(AIProvider):
 
     def _generate_updated_document_copilot(self, file_content: str, old_text: str, new_text: str, file_path: str, custom_instructions: str = None) -> Optional[str]:
         """Generate updated document content using GitHub Copilot"""
-        
+
         try:
             import requests
-            
-            url = "https://models.inference.ai.azure.com/chat/completions"
+
+            url = self.GITHUB_MODELS_API_URL
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -1865,11 +1868,11 @@ Return the complete updated file content now (NO explanatory text):"""
     def _handle_additive_change_copilot(self, file_content: str, old_text: str, new_text: str, file_path: str) -> Optional[str]:
         """Handle additive changes using GitHub Copilot"""
         self.logger.log("🔨 GitHub Copilot handling additive change - generating new content...")
-        
+
         try:
             import requests
-            
-            url = "https://models.inference.ai.azure.com/chat/completions"
+
+            url = self.GITHUB_MODELS_API_URL
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -1937,11 +1940,11 @@ Generate the new content now:"""
     def _handle_corrective_change_copilot(self, file_content: str, old_text: str, new_text: str, file_path: str) -> Optional[str]:
         """Handle corrective changes using GitHub Copilot"""
         self.logger.log("🔍 GitHub Copilot handling corrective change - finding specific issues...")
-        
+
         try:
             import requests
-            
-            url = "https://models.inference.ai.azure.com/chat/completions"
+
+            url = self.GITHUB_MODELS_API_URL
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -2014,11 +2017,11 @@ Find the exact text to correct:"""
     def _handle_general_change_copilot(self, file_content: str, old_text: str, new_text: str, file_path: str) -> Optional[str]:
         """Handle general changes using GitHub Copilot with enhanced targeting"""
         self.logger.log("🎯 GitHub Copilot handling general change with enhanced targeting...")
-        
+
         try:
             import requests
-            
-            url = "https://models.inference.ai.azure.com/chat/completions"
+
+            url = self.GITHUB_MODELS_API_URL
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",

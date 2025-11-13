@@ -70,6 +70,7 @@ class WorkflowItem:
         return {
             'item_type': self.item_type,
             'repo_source': self.repo_source,
+            'data': self.data,  # Include raw data for full reconstruction
             'number': self.number,
             'title': self.title,
             'state': self.state,
@@ -77,6 +78,7 @@ class WorkflowItem:
             'updated_at': self.updated_at,
             'body': self.body,
             'url': self.url,
+            'api_url': self.api_url,
             'author': self.author,
             'author_url': self.author_url,
             'labels': self.labels,
@@ -88,6 +90,16 @@ class WorkflowItem:
             'head_ref': self.head_ref,
             'comments_count': self.comments_count
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'WorkflowItem':
+        """Create WorkflowItem from dictionary (for cache deserialization)"""
+        # Extract the raw GitHub API data if available, otherwise use the dict itself
+        raw_data = data.get('data', data)
+        item_type = data.get('item_type', 'issue')
+        repo_source = data.get('repo_source', 'target')
+
+        return cls(item_type, raw_data, repo_source)
 
 
 class GitHubRepoFetcher:
@@ -516,3 +528,69 @@ class WorkflowManager:
                        if any(label in item.labels for label in label_filter)]
 
         return filtered
+
+    def fetch_comments(self, repo_str: str, issue_number: int, is_pull_request: bool = False) -> List[Dict[str, Any]]:
+        """
+        Fetch comments for an issue or pull request
+
+        Args:
+            repo_str: Repository string in format "owner/repo"
+            issue_number: Issue or PR number
+            is_pull_request: Whether this is a pull request (for PR-specific comments)
+
+        Returns:
+            List of comment dictionaries with keys: 'user', 'body', 'created_at', 'updated_at'
+        """
+        try:
+            # Parse repository string
+            if '/' not in repo_str:
+                self.log(f"Invalid repository format: {repo_str}")
+                return []
+
+            owner, repo = repo_str.split('/', 1)
+
+            # Fetch issue/PR comments (these are the same endpoint for both issues and PRs)
+            url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments"
+            print(f"DEBUG: Fetching comments from URL: {url}", flush=True)
+
+            response = requests.get(url, headers=self.headers)
+            print(f"DEBUG: Response status code: {response.status_code}", flush=True)
+            print(f"DEBUG: Response headers: {dict(response.headers)}", flush=True)
+            print(f"DEBUG: Response text length: {len(response.text)}", flush=True)
+            print(f"DEBUG: Response content (first 500): {response.text[:500]}", flush=True)
+
+            response.raise_for_status()
+
+            response_data = response.json()
+            print(f"DEBUG: Response data type: {type(response_data)}", flush=True)
+            print(f"DEBUG: Number of items: {len(response_data) if isinstance(response_data, list) else 'Not a list'}", flush=True)
+
+            if isinstance(response_data, list) and len(response_data) > 0:
+                print(f"DEBUG: First item keys: {list(response_data[0].keys())}", flush=True)
+
+            comments = []
+            for comment_data in response_data:
+                comments.append({
+                    'user': comment_data.get('user', {}).get('login', 'unknown'),
+                    'body': comment_data.get('body', ''),
+                    'created_at': comment_data.get('created_at', ''),
+                    'updated_at': comment_data.get('updated_at', ''),
+                    'url': comment_data.get('html_url', '')
+                })
+
+            self.log(f"Fetched {len(comments)} comments for {repo_str} #{issue_number}")
+            print(f"DEBUG: Successfully parsed {len(comments)} comments", flush=True)
+            return comments
+
+        except requests.exceptions.RequestException as e:
+            self.log(f"Error fetching comments for {repo_str} #{issue_number}: {e}")
+            print(f"DEBUG: RequestException occurred: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return []
+        except Exception as e:
+            self.log(f"Unexpected error fetching comments: {e}")
+            print(f"DEBUG: Exception occurred: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return []

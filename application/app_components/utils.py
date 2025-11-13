@@ -646,11 +646,6 @@ CUSTOM_INSTRUCTIONS=
             print(f"Error creating default .env file: {e}")
             return False
 
-
-# Removed EnhancedContentBuilders class - was specific to Azure DevOps
-# Use ContentBuilders class for generic GitHub automation instead
-
-
 # Compatibility functions for direct function access
 def get_next_pr_number(provider_key: str) -> int:
     """Compatibility function for direct access to PR number generation"""

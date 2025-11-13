@@ -229,9 +229,7 @@ class GitHubGQL:
         if self.dry_run:
             # Return sample data for dry run
             return [
-                "username/fabric-docs",
-                "username/azure-docs", 
-                "username/powerbi-docs"
+                "username/repo_name",
             ]
         
         try:
@@ -324,8 +322,8 @@ class GitHubGQL:
         
         if self.dry_run:
             return {
-                "target_alternatives": ["microsoftdocs/fabric-docs-pr"],
-                "fork_alternatives": ["b-tsammons/azure-docs-pr"]
+                "target_alternatives": ["username/target_repo_name"],
+                "fork_alternatives": ["username/fork_repo_name"]
             }
         
         try:
