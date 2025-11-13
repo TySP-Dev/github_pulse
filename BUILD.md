@@ -5,11 +5,15 @@
 - [Node.js](https://nodejs.org/) (v18+)
 - [Git](https://git-scm.com/)
 - Flet v0.28.0
-- Flutter SDK v3.29.0 (Use FVM for managing Flutter versions)
-- [Visual Studio 2016 (Windows Users)](https://aka.ms/vs/16/release/vs_community.exe)
+- Flutter SDK v3.29.0 (Flet will install this automatically, but you can also [install it manually](https://docs.flutter.dev/get-started/install))
+- [Visual Studio 2016 (Windows Users)](https://aka.ms/vs/16/release/vs_community.exe) 
 - Android Studio (for Android builds)
 - Xcode (for iOS builds)
 - Any required package managers (e.g., npm, yarn)
+
+> [!IMPORTANT]
+> Flet v0.28.9 only supports Flutter SDK v3.29.0. Using other versions may lead to build failures.
+> Flutter SDK v3.29.0 only supports Visual Studio 2016 on Windows. Ensure you have the correct version installed.
 
 ## Clone the Repository
 
@@ -45,17 +49,7 @@ sudo apt upgrade
 sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 ```
 
-## Setup Flutter
-
-```bash
-# Install FVM
-dart pub global activate fvm
-```
-
-```bash
-# Add to path
-export PATH="$PATH":"$HOME/.pub-cache/bin"
-```
+## Setup Flutte
 
 ```bash
 # Set ICU data file path (Windows example)
@@ -65,33 +59,8 @@ $env:FLUTTER_ICU_DATA_FILE="C:\path\to\flutter\bin\cache\artifacts\engine\window
 # Example path $env:FLUTTER_ICU_DATA_FILE="C:\Users\<username>\flutter\bin\cache\artifacts\engine\windows-x64\icudtl.dat"
 
 ```bash
-# Install Flutter version 3.29.0
-fvm install 3.29.0
-```
-
-```bash
-fvm use 3.29.0 --force
-```
-
-```bash
-# Get cached Flutter versions
-fvm list
-```
-
-```bash
-# Create a temporary alias for Flutter (Windows example)
-function flutter { fvm flutter $args }
-```
-
-```bash
-# Create a temporary alias for Flutter (Linux / MacOS example)
-alias flutter="fvm flutter"
-```
-
-```bash
 # Verify Flutter installation
 flutter --version
-# Should show Flutter 3.29.0
 ```
 
 ```bash
@@ -144,29 +113,32 @@ flutter precache --android
 
 ## Build the Application
 
+> [!NOTE]
+> Ensure you are in the `src` directory of the project and the Python virtual environment is activated. `venv\Scripts\activate` (Windows) or `source venv/bin/activate` (macOS/Linux).
+
 ```bash
 # Windows
-python -m flet.cli build windows
+flet build windows
 ```
 
 ```bash
 # Linux
-python -m flet.cli build linux
+flet build linux
 ```
 
 ```bash
 # Android
-python -m flet.cli build apk
+flet build apk
 ```
 
 ```bash
 # macOS
-python -m flet.cli build macos
+flet build macos
 ```
 
 ```bash
 # iOS
-python -m flet.cli build ios
+flet build ios
 ```
 ## Additional Notes
 
