@@ -165,3 +165,6 @@ storage/
 # Build
 build/
 pyproject.toml
+
+# Config
+\config.json
