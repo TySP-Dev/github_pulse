@@ -214,3 +214,6 @@ config.json
 
 # Build
 build/
+
+# FVM Version Cache
+.fvm/
