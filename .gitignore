@@ -167,4 +167,4 @@ build/
 pyproject.toml
 
 # Config
-\config.json
+config.json
