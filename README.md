@@ -1,22 +1,36 @@
 # GitHub Pulse
 
-A Python-based GUI application for GitHub automation workflows.
+A Python-based GUI application for GitHub automation workflows and AI assisted workflows.
+
+> [!NOTE]
+> This project is currently in active development. Features and functionality may change frequently. Bug reports and contributions are welcome and encouraged!
+> Please be aware that some features may be incomplete or unstable.
+
+![GitHub Pulse img](media/github_pulse_img.png)
+
+## Pulse Workflow
+
+![Pulse Workflow img](media/flow-diagram.png)
 
 ## Project Structure
 
 ```text
-github_automation/
+github_pulse/
 ├── application/              # Main application directory
 │   ├── app.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
 │   └── app_components/      # Application modules
+│       ├── __init__.py          # Package initializer
 │       ├── ai_manager.py           # AI provider integration
 │       ├── cache_manager.py        # Caching functionality
 │       ├── config_manager.py       # Configuration management
 │       ├── github_api.py           # GitHub API client
 │       ├── main_gui.py             # Main GUI interface
+│       ├── processing_log_dialog.py  # Processing log dialog
 │       ├── settings_dialog.py      # Settings dialog
-│       └── utils.py                # Utility functions
+│       ├── settings_manager.py     # Settings management
+│       ├── utils.py                # Utility functions
+│       └── workflow.py             # Workflow processing
 ├── media/                   # Images and assets
 ├── README.md               # This file
 ├── SETUP.md                # Setup guide
@@ -33,8 +47,8 @@ github_automation/
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/TySP-Dev/github_automation.git
-   cd github_automation/application
+   git clone https://github.com/TySP-Dev/github_pulse.git
+   cd github_pulse/application
    ```
 
 2. **Create and activate virtual environment**
@@ -67,18 +81,9 @@ See [SETUP.md](SETUP.md) for detailed setup instructions.
 
 ## Contributing
 
-This project welcomes contributions and suggestions. Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution.
+This project welcomes contributions and suggestions. In order to contribute, please fork the repository and create a pull request.
 
 ## License
 
+GNU General Public License v3.0.
 See [LICENSE](LICENSE) file for details.
-
-## Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.

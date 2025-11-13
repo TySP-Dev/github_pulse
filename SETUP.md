@@ -35,12 +35,6 @@ A Python-based GUI application for GitHub automation workflows.
    source venv/bin/activate
    ```
 
-   To deactivate the environment when done:
-
-   ```bash
-   deactivate
-   ```
-
 3. **Install Dependencies**
 
    ```bash
@@ -53,12 +47,18 @@ A Python-based GUI application for GitHub automation workflows.
    python app.py
    ```
 
+> [!NOTE]
+> It is highly recommended to use a virtual environment to manage dependencies and avoid conflicts with other Python projects on your system.
+> Ensure you activate the virtual environment each time you work on or start this application.
+
 ### Virtual Environment Management
 
 **Activating the environment** (when returning to the project):
 
+```bash
 - Windows: `venv\Scripts\activate`
 - macOS/Linux: `source venv/bin/activate`
+```
 
 **Deactivating the environment** (when done working):
 
@@ -78,21 +78,25 @@ deactivate
 The project is organized as follows:
 
 ```text
-github_automation/
+github_pulse/
 ├── application/              # Main application directory
 │   ├── app.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
 │   └── app_components/      # Application modules
+│       ├── __init__.py          # Package initializer
 │       ├── ai_manager.py           # AI provider integration
 │       ├── cache_manager.py        # Caching functionality
 │       ├── config_manager.py       # Configuration management
 │       ├── github_api.py           # GitHub API client
 │       ├── main_gui.py             # Main GUI interface
+│       ├── processing_log_dialog.py  # Processing log dialog
 │       ├── settings_dialog.py      # Settings dialog
-│       └── utils.py                # Utility functions
+│       ├── settings_manager.py     # Settings management
+│       ├── utils.py                # Utility functions
+│       └── workflow.py             # Workflow processing
 ├── media/                   # Images and assets
-├── README.md               # Project overview
-├── SETUP.md                # This setup guide
+├── README.md               # Readme file
+├── SETUP.md                # This file
 └── LICENSE                 # License information
 ```
 
@@ -122,6 +126,9 @@ github_automation/
   - `claude` - Anthropic Claude API
   - `chatgpt` - OpenAI ChatGPT API
   - `github-copilot` - GitHub Models API
+  - `ollama` - Ollama Local Models
+- **Ollama Model**: Select model based on local availability
+- **Ollama API Endpoint**: URL for Ollama AI server
 - **API Keys**: Provide keys based on your chosen provider
 
 ### Configuration Tips
@@ -129,15 +136,18 @@ github_automation/
 **Start Simple**: Configure only GitHub initially
 **Test Connection**: Use "Test Connection" button to verify settings
 **AI Enhancement**: Add AI provider later for automated processing
+**Configuration File**: Settings are saved in `config.json` for persistence
 
 ## Security Best Practices
 
 ### Token Security
 
-- **Never commit** `.env` file to version control
+- **Use PATs** instead of passwords
 - **Rotate tokens** regularly (90 days recommended)
 - **Minimum permissions**: Use least privilege principle
 - **Secure storage**: Store tokens in secure password manager
+- **Avoid hardcoding**: Never hardcode tokens in source code
+- **Secret management**: This project uses `keyring` for secure storage
 
 ### Repository Access
 
