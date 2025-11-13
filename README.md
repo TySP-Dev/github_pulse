@@ -6,11 +6,11 @@ A Python-based GUI application for GitHub automation workflows and AI assisted w
 > This project is currently in active development. Features and functionality may change frequently. Bug reports and contributions are welcome and encouraged!
 > Please be aware that some features may be incomplete or unstable.
 
-![GitHub Pulse img](assets/github_pulse_img.png)
+![GitHub Pulse img](application/app_components/assets/github_pulse_img.png)
 
 ## Pulse Workflow
 
-![Pulse Workflow img](assets/flow-diagram.png)
+![Pulse Workflow img](application/app_components/assets/flow-diagram.png)
 
 ## Project Structure
 
