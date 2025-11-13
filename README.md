@@ -1,4 +1,4 @@
-# GitHub Pulse
+# <img src="media/pulse_logo_white_no_bkg.png" alt="drawing" width="200"/>
 
 A Python-based GUI application for GitHub automation workflows and AI assisted workflows.
 
