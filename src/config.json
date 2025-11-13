@@ -1,0 +1,14 @@
+{
+  "GITHUB_REPO": "",
+  "FORKED_REPO": "",
+  "LOCAL_REPO_PATH": "",
+  "AI_PROVIDER": "none",
+  "DRY_RUN": "false",
+  "DEFAULT_BRANCH": "main",
+  "THEME_MODE": "dark",
+  "AUTO_REFRESH": "true",
+  "REFRESH_INTERVAL": "300",
+  "OLLAMA_URL": "",
+  "OLLAMA_MODEL": "",
+  "CUSTOM_INSTRUCTIONS": ""
+}

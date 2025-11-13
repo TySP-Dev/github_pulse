@@ -1,9 +1,0 @@
-# Core dependencies
-requests>=2.31.0
-keyring>=24.0.0  # Secure credential storage
-
-# UI Framework
-flet>=0.28.0
-
-# Git operations (required for AI functionality)
-GitPython>=3.1.40

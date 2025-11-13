@@ -10,10 +10,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import tkinter as tk
 from abc import ABC, abstractmethod
 from pathlib import Path
-from tkinter import messagebox
 from typing import List, Tuple, Optional
 
 
@@ -2761,10 +2759,6 @@ def get_detailed_python_environment_info() -> dict:
 
 def install_ai_packages_enhanced(packages: List[str], parent_window=None) -> bool:
     """Enhanced AI provider package installation with better error handling
-    
-    Args:
-        packages: List of package names to install
-        parent_window: Parent tkinter window for dialog (optional)
         
     Returns:
         bool: True if installation successful or user declined, False if failed
@@ -2801,102 +2795,11 @@ def install_ai_packages_enhanced(packages: List[str], parent_window=None) -> boo
               f"{venv_info}\n\n"
               f"Would you like to install them now?\n\n"
               f"This will run: pip install {' '.join(packages)}")
-    
-    # Show confirmation dialog
-    try:
-        import tkinter as tk
-        from tkinter import messagebox
-        
-        # If we have a parent window, use it; otherwise create a temporary root
-        if parent_window:
-            result = messagebox.askyesno("Install AI Packages", message, parent=parent_window)
-        else:
-            # Create temporary root window for the dialog
-            temp_root = tk.Tk()
-            temp_root.withdraw()  # Hide the temporary window
-            result = messagebox.askyesno("Install AI Packages", message)
-            temp_root.destroy()
-            
-        if not result:
-            print("User declined to install AI packages")
-            return True  # User declined, but this isn't a failure
-            
-    except Exception as e:
-        print(f"Could not show dialog, proceeding with installation: {e}")
-        # If dialog fails, ask in console
-        response = input(f"Install AI packages ({package_list})? [y/N]: ").lower()
-        if response not in ['y', 'yes']:
-            return True
-    
-    # Install packages
-    try:
-        if in_venv:
-            print(f"Installing packages to virtual environment: {package_list}")
-        else:
-            print(f"Installing packages system-wide: {package_list}")
-        
-        for package in packages:
-            print(f"Installing {package}...")
-            
-            # Build pip command
-            pip_cmd = [sys.executable, '-m', 'pip', 'install', package]
-            
-            # First attempt: Direct installation
-            result = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=300)
-            
-            # If direct install fails and we're not in venv, try with --user flag
-            if result.returncode != 0 and not in_venv:
-                print(f"  Direct installation failed, trying with --user flag...")
-                pip_cmd_user = [sys.executable, '-m', 'pip', 'install', '--user', package]
-                result = subprocess.run(pip_cmd_user, capture_output=True, text=True, timeout=300)
-                
-                if result.returncode == 0:
-                    print(f"✅ Successfully installed {package} (user-local)")
-                    continue
-            
-            if result.returncode != 0:
-                print(f"❌ Failed to install {package}:")
-                print(f"Error: {result.stderr}")
-                
-                # Show more helpful error message
-                if "permission" in result.stderr.lower() or "access" in result.stderr.lower():
-                    print("  This appears to be a permissions issue.")
-                    if not in_venv:
-                        print("  Consider:")
-                        print("  1. Running as administrator")
-                        print("  2. Using a virtual environment")
-                        print("  3. Installing with --user flag")
-                
-                return False
-            else:
-                install_type = "to virtual environment" if in_venv else "system-wide"
-                print(f"✅ Successfully installed {package} ({install_type})")
-        
-        success_msg = "✅ AI packages installed successfully!"
-        if in_venv:
-            success_msg += f" (installed to virtual environment)"
-        else:
-            success_msg += f" (installed system-wide)"
-            
-        print(success_msg)
-        print("Please restart the application to use the new AI features.")
-        return True
-        
-    except subprocess.TimeoutExpired:
-        print("❌ Installation timed out")
-        return False
-    except Exception as e:
-        print(f"❌ Error installing packages: {e}")
-        return False
 
 
 def validate_ai_provider_setup(config: dict, parent_window=None) -> bool:
     """Validate AI provider setup and offer to install missing modules
-    
-    Args:
-        config: Configuration dictionary
-        parent_window: Parent tkinter window for dialogs
-        
+
     Returns:
         bool: True if setup is valid or user handled the issue
     """

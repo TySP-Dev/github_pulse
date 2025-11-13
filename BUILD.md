@@ -15,7 +15,7 @@
 
 ```bash
 git clone https://github.com/TySP-Dev/github_pulse.git
-cd github_pulse/GitHub_Pulse
+cd github_pulse/src
 ```
 
 ## Python Virtual Environment
@@ -59,8 +59,10 @@ export PATH="$PATH":"$HOME/.pub-cache/bin"
 
 ```bash
 # Set ICU data file path (Windows example)
-$env:FLUTTER_ICU_DATA_FILE="C:\Users\micro\fvm\versions\3.29.0\bin\cache\artifacts\engine\windows-x64\icudtl.dat"
+$env:FLUTTER_ICU_DATA_FILE="C:\path\to\flutter\bin\cache\artifacts\engine\windows-x64\icudtl.dat" 
 ```
+
+# Example path $env:FLUTTER_ICU_DATA_FILE="C:\Users\<username>\flutter\bin\cache\artifacts\engine\windows-x64\icudtl.dat"
 
 ```bash
 # Install Flutter version 3.29.0

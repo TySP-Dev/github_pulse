@@ -44,14 +44,18 @@ class SettingsDialog:
             dialog = self._create_dialog()
             print(f"Dialog created: {dialog}")
 
-            # IMPORTANT: Set the reference before opening
-            if self.dialog_ref.current is None:
-                print("dialog_ref.current is None, setting it now")
-                self.dialog_ref.current = dialog
+            # Always set the dialog ref to the current dialog instance
+            print("Setting dialog_ref.current to new dialog instance")
+            self.dialog_ref.current = dialog
 
             # Use Flet 0.28+ API: page.open() instead of page.dialog
             print("Opening dialog with page.open()...")
             self.page.open(dialog)
+            # Ensure UI updates immediately (useful when console is not visible)
+            try:
+                self.page.update()
+            except Exception:
+                pass
             print("page.open() completed")
 
             # Start async initialization
