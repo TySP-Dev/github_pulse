@@ -67,6 +67,8 @@ class SettingsDialog:
         """Initialize async operations"""
         await asyncio.sleep(0.1)
         await self._scan_repos_async()
+        # Load cached Ollama models
+        await self._load_cached_ollama_models()
         # Check packages for current AI provider
         await self._check_packages_for_current_provider()
 
@@ -341,16 +343,19 @@ class SettingsDialog:
         controls.append(ollama_api_key)
 
         # Ollama Model
+        ollama_model = ft.Dropdown(
+            ref=self.ollama_model_dropdown_ref,
+            label="Ollama Model",
+            value=self.config.get('OLLAMA_MODEL', ''),
+            options=[],
+            hint_text="Click scan to load models",
+            expand=True,
+        )
+        self.entries['OLLAMA_MODEL'] = ollama_model
+
         ollama_model_row = ft.Row(
             [
-                ft.Dropdown(
-                    ref=self.ollama_model_dropdown_ref,
-                    label="Ollama Model",
-                    value=self.config.get('OLLAMA_MODEL', ''),
-                    options=[],
-                    hint_text="Click scan to load models",
-                    expand=True,
-                ),
+                ollama_model,
                 ft.ElevatedButton(
                     "🔍 Scan",
                     on_click=lambda e: self.page.run_task(self._scan_ollama_models_async),
@@ -431,6 +436,47 @@ class SettingsDialog:
             return True, venv_name
         else:
             return False, "system-wide"
+
+    async def _load_cached_ollama_models(self):
+        """Load cached Ollama models on dialog open"""
+        if not self.cache_manager:
+            return
+
+        try:
+            # Get Ollama URL to use as cache identifier
+            ollama_url = self.config.get('OLLAMA_URL', '').strip()
+            if not ollama_url:
+                return
+
+            # Load cached models
+            def load_cache():
+                cached_data = self.cache_manager.load_from_cache('ollama_models', ollama_url)
+                if cached_data:
+                    # Extract model names from cache format
+                    return [item['name'] for item in cached_data if 'name' in item]
+                return []
+
+            cached_models = await asyncio.to_thread(load_cache)
+
+            if cached_models and self.ollama_model_dropdown_ref.current:
+                # Update dropdown with cached models
+                self.ollama_model_dropdown_ref.current.options = [
+                    ft.dropdown.Option(model) for model in cached_models
+                ]
+
+                # Restore saved selection
+                saved_model = self.config.get('OLLAMA_MODEL', '')
+                if saved_model and saved_model in cached_models:
+                    self.ollama_model_dropdown_ref.current.value = saved_model
+                elif cached_models:
+                    # If saved model not in list, select first one
+                    self.ollama_model_dropdown_ref.current.value = cached_models[0]
+
+                self.page.update()
+                print(f"Loaded {len(cached_models)} cached Ollama models")
+
+        except Exception as e:
+            print(f"Error loading cached Ollama models: {e}")
 
     async def _check_packages_for_current_provider(self):
         """Check packages for the currently selected AI provider"""
@@ -797,14 +843,28 @@ class SettingsDialog:
                 models = data.get('models', [])
                 model_names = [model.get('name', '') for model in models if model.get('name')]
 
+                # Cache the models
+                if self.cache_manager and model_names:
+                    # Convert to cache format (list of dicts)
+                    cache_data = [{'name': name} for name in model_names]
+                    self.cache_manager.save_to_cache('ollama_models', ollama_url, cache_data)
+                    print(f"Cached {len(model_names)} Ollama models")
+
                 # Update UI
                 if self.ollama_model_dropdown_ref.current:
                     if model_names:
                         self.ollama_model_dropdown_ref.current.options = [
                             ft.dropdown.Option(name) for name in model_names
                         ]
-                        if model_names:
+
+                        # Restore saved selection if it exists in the list
+                        saved_model = self.config.get('OLLAMA_MODEL', '')
+                        if saved_model and saved_model in model_names:
+                            self.ollama_model_dropdown_ref.current.value = saved_model
+                        elif model_names:
+                            # Otherwise select first model
                             self.ollama_model_dropdown_ref.current.value = model_names[0]
+
                         self.page.update()
 
                         models_text = "\n".join(f"• {name}" for name in model_names[:10])
@@ -898,10 +958,6 @@ class SettingsDialog:
                 if isinstance(value, str):
                     value = value.strip()
                 config_values[key] = value
-
-        # Handle dropdown values specially
-        if self.ollama_model_dropdown_ref.current:
-            config_values['OLLAMA_MODEL'] = self.ollama_model_dropdown_ref.current.value or ''
 
         return config_values
 
