@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .utils import Logger
 from .settings_dialog import SettingsDialog
+from .processing_log_dialog import ProcessingLogDialog
 
 
 class DryRunVar:
@@ -47,6 +48,7 @@ class MainGUI:
         self.edit_mode = False
         self.workflow_items = {}
         self.current_workflow_items = []
+        self.active_workflow_item = None  # Currently selected item from All Items list
 
         # Repository data
         self.target_repos = []
@@ -77,6 +79,7 @@ class MainGUI:
         self.target_repo_dropdown_ref = ft.Ref[ft.Dropdown]()
         self.forked_repo_dropdown_ref = ft.Ref[ft.Dropdown]()
         self.workflow_item_dropdown_ref = ft.Ref[ft.Dropdown]()
+        self.active_item_display_ref = ft.Ref[ft.Container]()
         self.item_counter_ref = ft.Ref[ft.Text]()
 
         # DataTable ref for all items
@@ -84,6 +87,9 @@ class MainGUI:
 
         # All items display
         self.all_items_container_ref = ft.Ref[ft.Column]()
+        self.all_items_search_ref = ft.Ref[ft.TextField]()
+        self.all_items_type_filter_ref = ft.Ref[ft.RadioGroup]()
+        self.all_items_repo_filter_ref = ft.Ref[ft.RadioGroup]()
         self.item_detail_dialog_ref = ft.Ref[ft.AlertDialog]()
 
         # Sidebar state
@@ -121,9 +127,9 @@ class MainGUI:
                     ),
                     ft.Container(expand=True),
                     ft.IconButton(
-                        icon=ft.icons.PSYCHOLOGY,
-                        tooltip="Check AI Modules",
-                        on_click=self._check_ai_modules_manual,
+                        icon=ft.icons.LIST_ALT,
+                        tooltip="Processing Log",
+                        on_click=self._open_processing_log,
                     ),
                     ft.IconButton(
                         icon=ft.icons.SETTINGS,
@@ -172,12 +178,22 @@ class MainGUI:
             vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
-        # Overall layout: Top nav + bottom section
+        # Create hidden log text field for the processing log dialog
+        hidden_log_text = ft.TextField(
+            ref=self.log_text_ref,
+            multiline=True,
+            read_only=True,
+            text_style=ft.TextStyle(font_family="Courier New"),
+            visible=False,  # Hidden from main UI
+        )
+
+        # Overall layout: Top nav + bottom section + hidden log field
         app_layout = ft.Column(
             [
                 top_nav,
                 ft.Divider(height=1),
                 bottom_section,
+                hidden_log_text,  # Hidden but accessible for dialog
             ],
             spacing=0,
             expand=True,
@@ -221,11 +237,6 @@ class MainGUI:
             content=ft.Row(
                 [
                     ft.Container(expand=True),
-                    ft.IconButton(
-                        icon=ft.icons.PSYCHOLOGY,
-                        tooltip="Check AI Modules",
-                        on_click=self._check_ai_modules_manual,
-                    ),
                     ft.IconButton(
                         icon=ft.icons.SETTINGS,
                         tooltip="Settings",
@@ -303,43 +314,62 @@ class MainGUI:
         # Action controls (for action mode)
         action_controls = ft.Column(
             [
-                ft.Text("View", weight=ft.FontWeight.BOLD),
-                ft.RadioGroup(
-                    ref=self.repo_source_ref,
-                    content=ft.Row([
-                        ft.Radio(value="target", label="Target"),
-                        ft.Radio(value="fork", label="Fork"),
-                    ]),
-                    value="target",
-                    on_change=lambda e: self._filter_workflow_items(),
-                ),
-                ft.Text("Item Type", weight=ft.FontWeight.BOLD),
-                ft.RadioGroup(
-                    ref=self.item_type_ref,
-                    content=ft.Row([
-                        ft.Radio(value="pull_request", label="PRs"),
-                        ft.Radio(value="issue", label="Issues"),
-                    ]),
-                    value="pull_request",
-                    on_change=lambda e: self._filter_workflow_items(),
-                ),
+                ft.Text("Active Item", weight=ft.FontWeight.BOLD, size=14),
+                ft.Row([
+                    ft.Container(
+                        ref=self.active_item_display_ref,
+                        content=ft.Text(
+                            "No item selected",
+                            color=ft.colors.GREY_500,
+                            italic=True,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                        padding=10,
+                        border=ft.border.all(1, ft.colors.OUTLINE),
+                        border_radius=8,
+                        bgcolor=ft.colors.GREY_900,
+                        expand=True,
+                    ),
+                ], spacing=5),
+                ft.Divider(height=10),
+                ft.Text("All Items", weight=ft.FontWeight.BOLD, size=14),
                 ft.Row([
                     ft.ElevatedButton(
-                        "📥 Load Items",
+                        "📥 Pull PRs/Issues",
                         on_click=lambda e: self.page.run_task(self._load_workflow_items_async),
                     ),
                     ft.Text(ref=self.item_counter_ref, value="No items loaded"),
                 ]),
-                ft.Dropdown(
-                    ref=self.workflow_item_dropdown_ref,
-                    label="Select Workflow Item",
-                    hint_text="Select an item",
-                    options=[],
-                    expand=True,
-                    on_change=self._on_workflow_item_selected,
+                ft.TextField(
+                    ref=self.all_items_search_ref,
+                    hint_text="Search items...",
+                    prefix_icon=ft.icons.SEARCH,
+                    dense=True,
+                    on_change=self._on_all_items_search_changed,
+                    border_radius=8,
                 ),
-                ft.Divider(height=10),
-                ft.Text("All Items", weight=ft.FontWeight.BOLD, size=14),
+                ft.Text("Source Repo", weight=ft.FontWeight.BOLD),
+                ft.RadioGroup(
+                    ref=self.all_items_type_filter_ref,
+                    content=ft.Row([
+                        ft.Radio(value="both", label="Both"),
+                        ft.Radio(value="prs", label="PRs"),
+                        ft.Radio(value="issues", label="Issues"),
+                    ], spacing=5),
+                    value="both",
+                    on_change=self._on_all_items_filter_changed,
+                ),
+                ft.Text("Item Type", weight=ft.FontWeight.BOLD),
+                ft.RadioGroup(
+                    ref=self.all_items_repo_filter_ref,
+                    content=ft.Row([
+                        ft.Radio(value="both", label="Both"),
+                        ft.Radio(value="target", label="Target"),
+                        ft.Radio(value="fork", label="Fork"),
+                    ], spacing=5),
+                    value="both",
+                    on_change=self._on_all_items_filter_changed,
+                ),
                 ft.Container(
                     content=ft.Column(
                         ref=self.all_items_container_ref,
@@ -426,16 +456,6 @@ class MainGUI:
                     text="View Diff",
                     icon=ft.icons.DIFFERENCE,
                     content=self._create_diff_tab()
-                ),
-                ft.Tab(
-                    text="Processing Log",
-                    icon=ft.icons.LIST_ALT,
-                    content=self._create_log_tab()
-                ),
-                ft.Tab(
-                    text="All Items",
-                    icon=ft.icons.VIEW_LIST,
-                    content=self._create_all_items_tab()
                 ),
             ],
             expand=True,
@@ -607,22 +627,6 @@ class MainGUI:
             expand=True,
         )
 
-    def _create_log_tab(self) -> ft.Container:
-        """Create the processing log tab"""
-        log_text = ft.TextField(
-            ref=self.log_text_ref,
-            multiline=True,
-            read_only=True,
-            expand=True,
-            text_style=ft.TextStyle(font_family="Courier New"),
-        )
-
-        return ft.Container(
-            content=log_text,
-            padding=20,
-            expand=True,
-        )
-
     def _create_all_items_tab(self) -> ft.Container:
         """Create the all items tab"""
         # DataTable for items
@@ -732,77 +736,65 @@ class MainGUI:
                     self._display_workflow_item(item)
                     break
 
-    def _filter_workflow_items(self):
-        """Filter workflow items based on current selections"""
-        print("=" * 60)
-        print("FILTER METHOD CALLED")
-        print("=" * 60)
-
-        if not self.repo_source_ref.current or not self.item_type_ref.current:
-            print("ERROR: repo_source or item_type ref not available")
-            if self.logger:
-                self.logger.log("Cannot filter: repo source or item type not selected")
+    def _on_all_items_search_changed(self, e):
+        """Handle search field change in All Items list"""
+        if not self.all_items_search_ref.current:
             return
 
-        source = self.repo_source_ref.current.value
-        item_type = self.item_type_ref.current.value
-        print(f"DEBUG: source='{source}', item_type='{item_type}'")
+        search_query = self.all_items_search_ref.current.value or ""
+        type_filter = self.all_items_type_filter_ref.current.value if self.all_items_type_filter_ref.current else "both"
+        repo_filter = self.all_items_repo_filter_ref.current.value if self.all_items_repo_filter_ref.current else "both"
+        self._populate_all_items(search_query, type_filter, repo_filter)
 
-        # Map item_type to the correct key suffix
-        # "pull_request" → "prs", "issue" → "issues"
-        if item_type == "pull_request":
-            type_suffix = "prs"
-        elif item_type == "issue":
-            type_suffix = "issues"
-        else:
-            type_suffix = f"{item_type}s"
+    def _on_all_items_filter_changed(self, e):
+        """Handle filter change in All Items list (type or repo source)"""
+        search_query = self.all_items_search_ref.current.value if self.all_items_search_ref.current else ""
+        type_filter = self.all_items_type_filter_ref.current.value if self.all_items_type_filter_ref.current else "both"
+        repo_filter = self.all_items_repo_filter_ref.current.value if self.all_items_repo_filter_ref.current else "both"
+        self._populate_all_items(search_query, type_filter, repo_filter)
 
-        key = f"{source}_{type_suffix}"
-        print(f"DEBUG: Mapped item_type '{item_type}' to suffix '{type_suffix}'")
-        print(f"DEBUG: Looking for key '{key}'")
+    def _filter_workflow_items(self):
+        """Collect all workflow items (no filtering since toggles were removed)"""
+        print("=" * 60)
+        print("COLLECTING WORKFLOW ITEMS")
+        print("=" * 60)
+
+        # Collect all items from all categories since filter toggles are removed
+        all_items = []
+        for key, items in self.workflow_items.items():
+            all_items.extend(items)
+
+        self.current_workflow_items = all_items
+        print(f"DEBUG: Collected {len(all_items)} total items")
         print(f"DEBUG: Available keys in workflow_items: {list(self.workflow_items.keys())}")
 
-        self.current_workflow_items = self.workflow_items.get(key, [])
-        print(f"DEBUG: Found {len(self.current_workflow_items)} items for key '{key}'")
-
         if self.logger:
-            self.logger.log(f"Filtering workflow items: source={source}, type={item_type}, key={key}")
+            self.logger.log(f"Collected {len(all_items)} workflow items from all categories")
             self.logger.log(f"Available workflow item keys: {list(self.workflow_items.keys())}")
-            self.logger.log(f"Found {len(self.current_workflow_items)} items for key '{key}'")
 
-        # Update dropdown
-        if self.workflow_item_dropdown_ref.current:
-            options = []
-            for item in self.current_workflow_items:
-                if hasattr(item, 'title'):
-                    options.append(ft.dropdown.Option(item.title))
-                    print(f"  - Added item: {item.title}")
-                else:
-                    print(f"  - WARNING: Item has no title attribute: {item}")
+        # Update item counter if it exists
+        if self.item_counter_ref.current:
+            count_text = f"{len(all_items)} item(s) loaded"
+            self.item_counter_ref.current.value = count_text
+            print(f"DEBUG: Counter text set to: {count_text}")
 
-            print(f"DEBUG: Created {len(options)} dropdown options")
-            self.workflow_item_dropdown_ref.current.options = options
-
-            if self.item_counter_ref.current:
-                count_text = f"{len(options)} item(s) loaded"
-                if len(options) == 0:
-                    count_text = f"No {item_type}s found in {source} repo"
-                self.item_counter_ref.current.value = count_text
-                print(f"DEBUG: Counter text set to: {count_text}")
-
-            print("DEBUG: Calling page.update()...")
-            self.page.update()
-            print("DEBUG: page.update() completed")
-        else:
-            print("ERROR: workflow_item_dropdown_ref.current is None!")
+        print("DEBUG: Calling page.update()...")
+        self.page.update()
+        print("DEBUG: page.update() completed")
 
     def _display_workflow_item(self, item):
         """Display a workflow item"""
         # Implementation would populate fields with workflow item data
         pass
 
-    def _populate_all_items(self):
-        """Populate the all items list with all loaded PRs and Issues"""
+    def _populate_all_items(self, search_query: str = "", type_filter: str = "both", repo_filter: str = "both"):
+        """Populate the all items list with all loaded PRs and Issues
+
+        Args:
+            search_query: Optional search string to filter items
+            type_filter: Filter by item type - "both", "prs", or "issues"
+            repo_filter: Filter by repo source - "both", "target", or "fork"
+        """
         if not self.all_items_container_ref.current:
             return
 
@@ -811,10 +803,56 @@ class MainGUI:
         for key, items in self.workflow_items.items():
             all_items.extend(items)
 
+        # Apply repo source filter
+        if repo_filter == "target":
+            all_items = [item for item in all_items if item.repo_source == "target"]
+        elif repo_filter == "fork":
+            all_items = [item for item in all_items if item.repo_source == "fork"]
+        # "both" shows everything, no filtering needed
+
+        # Apply type filter
+        if type_filter == "prs":
+            all_items = [item for item in all_items if item.item_type == "pull_request"]
+        elif type_filter == "issues":
+            all_items = [item for item in all_items if item.item_type == "issue"]
+        # "both" shows everything, no filtering needed
+
+        # Apply search filter if provided
+        if search_query:
+            search_lower = search_query.lower()
+            filtered_items = []
+            for item in all_items:
+                # Search in title, number, state, author, and labels
+                if (search_lower in item.title.lower() or
+                    search_lower in str(item.number) or
+                    search_lower in item.state.lower() or
+                    (item.author and search_lower in item.author.lower()) or
+                    any(search_lower in label.lower() for label in (item.labels or []))):
+                    filtered_items.append(item)
+            all_items = filtered_items
+
         if not all_items:
-            self.all_items_container_ref.current.controls = [
-                ft.Text("No items loaded", color=ft.colors.GREY_500, italic=True)
-            ]
+            if search_query or type_filter != "both" or repo_filter != "both":
+                filter_desc = []
+                if search_query:
+                    filter_desc.append(f"matching '{search_query}'")
+                if type_filter == "prs":
+                    filter_desc.append("PRs only")
+                elif type_filter == "issues":
+                    filter_desc.append("Issues only")
+                if repo_filter == "target":
+                    filter_desc.append("Target repo only")
+                elif repo_filter == "fork":
+                    filter_desc.append("Fork repo only")
+
+                msg = "No items " + " and ".join(filter_desc) if filter_desc else "No items loaded"
+                self.all_items_container_ref.current.controls = [
+                    ft.Text(msg, color=ft.colors.GREY_500, italic=True)
+                ]
+            else:
+                self.all_items_container_ref.current.controls = [
+                    ft.Text("No items loaded", color=ft.colors.GREY_500, italic=True)
+                ]
         else:
             # Sort by updated_at (most recent first)
             all_items.sort(key=lambda x: x.updated_at if hasattr(x, 'updated_at') else '', reverse=True)
@@ -942,24 +980,54 @@ class MainGUI:
         self.page.update()
 
     def _select_item_as_current(self, item):
-        """Select an item as the current workflow item in the dropdown"""
-        if not self.workflow_item_dropdown_ref.current:
+        """Select an item as the current active workflow item"""
+        if not self.active_item_display_ref.current:
             return
 
-        # Update filters to match the selected item
-        # Set repo source (target/fork)
-        if self.repo_source_ref.current:
-            self.repo_source_ref.current.value = item.repo_source
+        # Store the active item
+        self.active_workflow_item = item
 
-        # Set item type (pull_request/issue)
-        if self.item_type_ref.current:
-            self.item_type_ref.current.value = item.item_type
+        # Determine display labels
+        repo_label = "Target" if item.repo_source == "target" else "Fork"
+        repo_color = ft.colors.BLUE if item.repo_source == "target" else ft.colors.PURPLE
+        type_label = "PR" if item.item_type == "pull_request" else "Issue"
+        type_color = ft.colors.GREEN if item.item_type == "pull_request" else ft.colors.ORANGE
 
-        # Re-filter the workflow items with the new settings
+        # Update the active item display with a nice card
+        self.active_item_display_ref.current.content = ft.Column([
+            ft.Row([
+                # Repo badge
+                ft.Container(
+                    content=ft.Text(repo_label, size=10, weight=ft.FontWeight.BOLD, color=ft.colors.WHITE),
+                    bgcolor=repo_color,
+                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    border_radius=4,
+                ),
+                # Type badge
+                ft.Container(
+                    content=ft.Text(type_label, size=10, weight=ft.FontWeight.BOLD, color=ft.colors.WHITE),
+                    bgcolor=type_color,
+                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    border_radius=4,
+                ),
+                ft.Container(expand=True),
+                # Clear button
+                ft.IconButton(
+                    icon=ft.icons.CLOSE,
+                    icon_size=16,
+                    tooltip="Clear selection",
+                    on_click=self._clear_active_item,
+                ),
+            ], spacing=5),
+            ft.Text(
+                f"#{item.number}: {item.title}",
+                size=12,
+                weight=ft.FontWeight.BOLD,
+            ),
+        ], spacing=5)
+
+        # Collect workflow items (filter toggles were removed, so this just collects all items)
         self._filter_workflow_items()
-
-        # Set the dropdown value to this item's title
-        self.workflow_item_dropdown_ref.current.value = item.title
 
         # Display the item
         self._display_workflow_item(item)
@@ -971,6 +1039,28 @@ class MainGUI:
         item_type_label = "PR" if item.item_type == "pull_request" else "Issue"
         repo_label = "Target" if item.repo_source == "target" else "Fork"
         self._show_snackbar(f"Selected {item_type_label} from {repo_label}: {item.title}", error=False)
+
+    def _clear_active_item(self, e=None):
+        """Clear the active item selection"""
+        if not self.active_item_display_ref.current:
+            return
+
+        # Clear the stored active item
+        self.active_workflow_item = None
+
+        # Reset the display to default "No item selected"
+        self.active_item_display_ref.current.content = ft.Text(
+            "No item selected",
+            color=ft.colors.GREY_500,
+            italic=True,
+            text_align=ft.TextAlign.CENTER,
+        )
+
+        # Update the page
+        self.page.update()
+
+        # Show confirmation
+        self._show_snackbar("Active item cleared", error=False)
 
     def _show_item_detail(self, item):
         """Show detail dialog for a workflow item"""
@@ -1314,9 +1404,6 @@ class MainGUI:
                     # Populate all items list in sidebar
                     self._populate_all_items()
 
-                    # Populate all items table in the All Items tab
-                    self._populate_all_items_table()
-
                     print("✅ Auto-load completed successfully")
                 else:
                     print("No cached items found, waiting for manual load")
@@ -1393,9 +1480,6 @@ class MainGUI:
 
                     # Populate all items list in sidebar
                     self._populate_all_items()
-
-                    # Populate all items table in the All Items tab
-                    self._populate_all_items_table()
 
                     print("✅ Cached items loaded for selected repositories")
                     if self.logger:
@@ -1868,9 +1952,6 @@ class MainGUI:
                 # Populate all items list in sidebar
                 self._populate_all_items()
 
-                # Populate all items table in the All Items tab
-                self._populate_all_items_table()
-
             except Exception as e:
                 if self.logger:
                     self.logger.log(f"Error loading workflow items: {e}")
@@ -1970,6 +2051,26 @@ class MainGUI:
             import traceback
             traceback.print_exc()
             self._show_snackbar(f"Error opening settings: {ex}", error=True)
+
+    def _open_processing_log(self, e):
+        """Open processing log dialog"""
+        try:
+            print("Processing Log button clicked!")
+
+            processing_log_dialog = ProcessingLogDialog(
+                self.page,
+                self.log_text_ref
+            )
+            print("ProcessingLogDialog created")
+
+            processing_log_dialog.show()
+            print("ProcessingLogDialog.show() completed")
+
+        except Exception as ex:
+            print(f"Error in _open_processing_log: {ex}")
+            import traceback
+            traceback.print_exc()
+            self._show_snackbar(f"Error opening processing log: {ex}", error=True)
 
     def _show_real_settings(self):
         """Show the real settings dialog"""

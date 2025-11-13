@@ -7,9 +7,11 @@ import flet as ft
 # Compatibility fix for Flet 0.28+ (Icons vs icons, Colors vs colors)
 ft.icons = ft.Icons
 ft.colors = ft.Colors
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 import os
 import asyncio
+import sys
+import subprocess
 
 
 class SettingsDialog:
@@ -27,6 +29,9 @@ class SettingsDialog:
         # Dropdown refs
         self.detected_repos_dropdown_ref = ft.Ref[ft.Dropdown]()
         self.ollama_model_dropdown_ref = ft.Ref[ft.Dropdown]()
+
+        # Package checker refs
+        self.package_status_ref = ft.Ref[ft.Container]()
 
     def show(self, on_result=None):
         """Show the settings dialog"""
@@ -62,6 +67,8 @@ class SettingsDialog:
         """Initialize async operations"""
         await asyncio.sleep(0.1)
         await self._scan_repos_async()
+        # Check packages for current AI provider
+        await self._check_packages_for_current_provider()
 
     def _create_dialog(self) -> ft.AlertDialog:
         """Create the settings dialog"""
@@ -232,6 +239,31 @@ class SettingsDialog:
         """Create AI settings tab"""
         controls = []
 
+        # Package Status Section (at the top)
+        controls.append(ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text("Package Status", size=16, weight=ft.FontWeight.BOLD),
+                    ft.IconButton(
+                        icon=ft.icons.REFRESH,
+                        tooltip="Refresh package status",
+                        on_click=lambda e: self.page.run_task(self._check_packages_for_current_provider),
+                    ),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(
+                    ref=self.package_status_ref,
+                    content=ft.Row([
+                        ft.ProgressRing(width=20, height=20),
+                        ft.Text("Checking packages...", color=ft.colors.BLUE),
+                    ]),
+                    padding=10,
+                    bgcolor=ft.colors.BLUE_100,
+                    border_radius=5,
+                ),
+            ], spacing=10),
+            padding=ft.padding.only(bottom=10),
+        ))
+
         # AI Provider Section
         controls.append(self._create_section_header("🤖 AI Provider Configuration"))
 
@@ -247,6 +279,7 @@ class SettingsDialog:
                 ft.dropdown.Option("ollama", "Ollama"),
             ],
             expand=True,
+            on_change=lambda e: self.page.run_task(self._check_packages_for_current_provider),
         )
         self.entries['AI_PROVIDER'] = ai_provider
         controls.append(ai_provider)
@@ -374,6 +407,304 @@ class SettingsDialog:
             ),
             padding=ft.padding.only(top=20, bottom=10),
         )
+
+    def _check_ai_packages(self, provider_name: str) -> Tuple[bool, List[str]]:
+        """Check if required packages for AI provider are installed"""
+        try:
+            from .ai_manager import AIManager
+            ai_manager = AIManager()
+            available, missing = ai_manager.check_ai_module_availability(provider_name)
+            return available, missing
+        except Exception as e:
+            print(f"Error checking AI packages: {e}")
+            return False, []
+
+    def _detect_environment(self) -> Tuple[bool, str]:
+        """Detect if running in virtual environment"""
+        in_venv = (hasattr(sys, 'real_prefix') or
+                   (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix) or
+                   os.environ.get('VIRTUAL_ENV') is not None)
+
+        if in_venv:
+            venv_path = os.environ.get('VIRTUAL_ENV', sys.prefix)
+            venv_name = os.path.basename(venv_path)
+            return True, venv_name
+        else:
+            return False, "system-wide"
+
+    async def _check_packages_for_current_provider(self):
+        """Check packages for the currently selected AI provider"""
+        if not self.package_status_ref.current:
+            return
+
+        # Get current provider selection
+        ai_provider_dropdown = self.entries.get('AI_PROVIDER')
+        if not ai_provider_dropdown:
+            return
+
+        provider = ai_provider_dropdown.value
+        if not provider or provider == 'none':
+            self.package_status_ref.current.content = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.INFO, color=ft.colors.BLUE),
+                    ft.Text("No AI provider selected", color=ft.colors.BLUE),
+                ]),
+                padding=10,
+                bgcolor=ft.colors.BLUE_100,
+                border_radius=5,
+            )
+            self.page.update()
+            return
+
+        # Check packages in background thread
+        def check_packages():
+            return self._check_ai_packages(provider)
+
+        available, missing = await asyncio.to_thread(check_packages)
+
+        # Update UI with results
+        if available:
+            self.package_status_ref.current.content = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN),
+                    ft.Text(f"All required packages for {provider} are installed", color=ft.colors.GREEN),
+                ]),
+                padding=10,
+                bgcolor=ft.colors.GREEN_100,
+                border_radius=5,
+            )
+        else:
+            in_venv, env_name = self._detect_environment()
+            env_text = f"Virtual environment: {env_name}" if in_venv else "System-wide installation"
+
+            self.package_status_ref.current.content = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.icons.WARNING, color=ft.colors.ORANGE),
+                        ft.Text(f"Missing packages for {provider}", color=ft.colors.ORANGE, weight=ft.FontWeight.BOLD),
+                    ]),
+                    ft.Text(f"Required: {', '.join(missing)}", size=12),
+                    ft.Text(f"Environment: {env_text}", size=12, italic=True),
+                    ft.ElevatedButton(
+                        "Install Packages",
+                        icon=ft.icons.DOWNLOAD,
+                        on_click=lambda e: self._install_packages(missing, provider),
+                    ),
+                ], spacing=5),
+                padding=10,
+                bgcolor=ft.colors.ORANGE_100,
+                border_radius=5,
+            )
+
+        self.page.update()
+
+    def _install_packages(self, packages: List[str], provider: str):
+        """Install missing packages"""
+        in_venv, env_name = self._detect_environment()
+        env_text = f"virtual environment '{env_name}'" if in_venv else "system-wide (may require administrator rights)"
+
+        # Create confirmation dialog
+        package_list = ', '.join(packages)
+        message = (f"Install the following packages for {provider}?\n\n"
+                  f"Packages: {package_list}\n\n"
+                  f"Installation location: {env_text}\n\n"
+                  f"Command: pip install {' '.join(packages)}")
+
+        def handle_install(e):
+            self.page.close(install_dialog)
+            # Run installation in background
+            self.page.run_task(lambda: self._do_install_packages(packages, provider))
+
+        def handle_cancel(e):
+            self.page.close(install_dialog)
+
+        install_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Install AI Packages"),
+            content=ft.Text(message),
+            actions=[
+                ft.TextButton("Cancel", on_click=handle_cancel),
+                ft.FilledButton("Install", on_click=handle_install),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.open(install_dialog)
+
+    async def _do_install_packages(self, packages: List[str], provider: str):
+        """Actually install the packages"""
+        in_venv, env_name = self._detect_environment()
+
+        # Update status to show installation in progress
+        if self.package_status_ref.current:
+            self.package_status_ref.current.content = ft.Container(
+                content=ft.Row([
+                    ft.ProgressRing(width=20, height=20),
+                    ft.Text(f"Installing packages for {provider}...", color=ft.colors.BLUE),
+                ]),
+                padding=10,
+                bgcolor=ft.colors.BLUE_100,
+                border_radius=5,
+            )
+            self.page.update()
+
+        # Install packages in background thread
+        def install():
+            try:
+                for package in packages:
+                    print(f"Installing {package}...")
+                    pip_cmd = [sys.executable, '-m', 'pip', 'install', package]
+                    result = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=300)
+
+                    # If direct install fails and we're not in venv, try with --user flag
+                    if result.returncode != 0 and not in_venv:
+                        print(f"  Direct installation failed, trying with --user flag...")
+                        pip_cmd_user = [sys.executable, '-m', 'pip', 'install', '--user', package]
+                        result = subprocess.run(pip_cmd_user, capture_output=True, text=True, timeout=300)
+
+                    if result.returncode != 0:
+                        return False, f"Failed to install {package}: {result.stderr}"
+
+                return True, "All packages installed successfully"
+
+            except subprocess.TimeoutExpired:
+                return False, "Installation timed out"
+            except Exception as e:
+                return False, f"Error installing packages: {str(e)}"
+
+        success, message = await asyncio.to_thread(install)
+
+        # Show result and offer to restart
+        if success:
+            def handle_restart(e):
+                self.page.close(result_dialog)
+                self._restart_application()
+
+            def handle_later(e):
+                self.page.close(result_dialog)
+                # Re-check packages after installation
+                self.page.run_task(self._check_packages_for_current_provider)
+
+            result_dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Installation Complete"),
+                content=ft.Text(f"{message}\n\nThe application needs to restart to use the newly installed packages."),
+                actions=[
+                    ft.TextButton("Restart Later", on_click=handle_later),
+                    ft.FilledButton("Restart Now", on_click=handle_restart),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+
+            self.page.open(result_dialog)
+        else:
+            self._show_alert("Installation Failed", message)
+            # Re-check packages to update status
+            await self._check_packages_for_current_provider()
+
+    def _restart_application(self):
+        """Restart the application"""
+        try:
+            # Close the dialog first
+            if self.dialog_ref.current:
+                self.page.close(self.dialog_ref.current)
+
+            # Show restart message
+            restart_msg = ft.SnackBar(
+                content=ft.Text("Restarting application..."),
+                bgcolor=ft.colors.BLUE,
+            )
+            self.page.open(restart_msg)
+            self.page.update()
+
+            # Restart the application
+            python = sys.executable
+            os.execl(python, python, *sys.argv)
+        except Exception as e:
+            self._show_alert("Restart Failed", f"Could not restart application: {str(e)}\n\nPlease restart manually.")
+
+    async def _install_and_save(self, packages: List[str], provider: str, config_values: Dict[str, Any]):
+        """Install packages and then save configuration"""
+        # Install packages
+        in_venv, _ = self._detect_environment()
+
+        def install():
+            try:
+                for package in packages:
+                    print(f"Installing {package}...")
+                    pip_cmd = [sys.executable, '-m', 'pip', 'install', package]
+                    result = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=300)
+
+                    # If direct install fails and we're not in venv, try with --user flag
+                    if result.returncode != 0 and not in_venv:
+                        print(f"  Direct installation failed, trying with --user flag...")
+                        pip_cmd_user = [sys.executable, '-m', 'pip', 'install', '--user', package]
+                        result = subprocess.run(pip_cmd_user, capture_output=True, text=True, timeout=300)
+
+                    if result.returncode != 0:
+                        return False, f"Failed to install {package}: {result.stderr}"
+
+                return True, "All packages installed successfully"
+
+            except subprocess.TimeoutExpired:
+                return False, "Installation timed out"
+            except Exception as e:
+                return False, f"Error installing packages: {str(e)}"
+
+        success, message = await asyncio.to_thread(install)
+
+        if success:
+            # Save configuration after successful installation
+            self._do_save(config_values)
+
+            # Offer to restart
+            def handle_restart(e):
+                self.page.close(restart_dialog)
+                self._restart_application()
+
+            def handle_later(e):
+                self.page.close(restart_dialog)
+
+            restart_dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Installation Complete"),
+                content=ft.Text(
+                    f"Packages installed successfully!\n"
+                    f"Settings have been saved.\n\n"
+                    f"The application needs to restart to use the newly installed packages."
+                ),
+                actions=[
+                    ft.TextButton("Restart Later", on_click=handle_later),
+                    ft.FilledButton("Restart Now", on_click=handle_restart),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+
+            self.page.open(restart_dialog)
+        else:
+            self._show_alert("Installation Failed", f"{message}\n\nSettings were not saved.")
+
+    def _do_save(self, config_values: Dict[str, Any]):
+        """Actually save the configuration"""
+        try:
+            # Save configuration
+            if self.config_manager:
+                success = self.config_manager.save_configuration(config_values)
+            else:
+                success = self._save_to_env_file(config_values)
+
+            if success:
+                self.result = config_values
+                self._show_alert(
+                    "Settings Saved",
+                    "Settings saved successfully!\n\nChanges applied immediately - no restart needed! ✨"
+                )
+                self._close_dialog()
+            else:
+                self._show_alert("Save Error", "Failed to save settings to .env file.")
+
+        except Exception as e:
+            self._show_alert("Save Error", f"Error saving settings:\n{str(e)}")
 
     async def _scan_repos_async(self):
         """Scan for git repositories in the local repo path"""
@@ -590,36 +921,48 @@ class SettingsDialog:
             # Check AI provider setup
             ai_provider = config_values.get('AI_PROVIDER', '').strip().lower()
             if ai_provider and ai_provider not in ['none', '']:
-                if ai_provider in ['chatgpt', 'claude', 'anthropic', 'github-copilot', 'copilot', 'github_copilot']:
-                    try:
-                        from .ai_manager import AIManager
-                        ai_manager = AIManager()
-                        available, missing = ai_manager.check_ai_module_availability(ai_provider)
-                        if not available:
-                            # Show warning but continue
-                            self._show_alert(
-                                "AI Modules Not Installed",
-                                f"Settings saved, but AI provider '{ai_provider}' requires additional packages: {', '.join(missing)}\n\n"
-                                f"You can install them later with:\npip install {' '.join(missing)}"
-                            )
-                    except ImportError:
-                        pass
+                if ai_provider in ['chatgpt', 'claude', 'anthropic', 'github-copilot', 'copilot', 'github_copilot', 'ollama']:
+                    available, missing = self._check_ai_packages(ai_provider)
+                    if not available and missing:
+                        # Offer to install missing packages
+                        in_venv, env_name = self._detect_environment()
+                        env_text = f"virtual environment '{env_name}'" if in_venv else "system-wide"
 
-            # Save configuration
-            if self.config_manager:
-                success = self.config_manager.save_configuration(config_values)
-            else:
-                success = self._save_to_env_file(config_values)
+                        def handle_install_and_save(e):
+                            self.page.close(package_warning_dialog)
+                            # Install packages and then save
+                            self.page.run_task(lambda: self._install_and_save(missing, ai_provider, config_values))
 
-            if success:
-                self.result = config_values
-                self._show_alert(
-                    "Settings Saved",
-                    "Settings saved successfully!\n\nChanges applied immediately - no restart needed! ✨"
-                )
-                self._close_dialog()
-            else:
-                self._show_alert("Save Error", "Failed to save settings to .env file.")
+                        def handle_save_anyway(e):
+                            self.page.close(package_warning_dialog)
+                            # Continue with save
+                            self._do_save(config_values)
+
+                        def handle_cancel_save(e):
+                            self.page.close(package_warning_dialog)
+
+                        package_warning_dialog = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text("Missing AI Packages"),
+                            content=ft.Text(
+                                f"AI provider '{ai_provider}' requires additional packages:\n\n"
+                                f"{', '.join(missing)}\n\n"
+                                f"Installation location: {env_text}\n\n"
+                                f"Would you like to install them now?"
+                            ),
+                            actions=[
+                                ft.TextButton("Cancel", on_click=handle_cancel_save),
+                                ft.TextButton("Save Without Installing", on_click=handle_save_anyway),
+                                ft.FilledButton("Install & Save", on_click=handle_install_and_save),
+                            ],
+                            actions_alignment=ft.MainAxisAlignment.END,
+                        )
+
+                        self.page.open(package_warning_dialog)
+                        return  # Don't save yet, wait for user choice
+
+            # Save configuration (packages are already installed or not needed)
+            self._do_save(config_values)
 
         except Exception as e:
             self._show_alert("Save Error", f"Error saving settings:\n{str(e)}")
