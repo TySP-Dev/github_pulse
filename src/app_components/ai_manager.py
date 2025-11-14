@@ -742,6 +742,12 @@ Current file content:
 class ChatGPTProvider(AIProvider):
     """ChatGPT/GPT-4 provider using OpenAI API"""
 
+    def __init__(self, api_key: str, logger: Logger):
+        """Initialize ChatGPT provider with OpenAI client"""
+        super().__init__(api_key, logger)
+        import openai
+        self.client = openai.OpenAI(api_key=api_key)
+
     def make_change(self, file_content: str, old_text: str, new_text: str, file_path: str, custom_instructions: str = None) -> Optional[str]:
         """Make smart, targeted changes based on reference text and suggestions
 
@@ -772,10 +778,10 @@ class ChatGPTProvider(AIProvider):
 
     def _generate_updated_document_chatgpt(self, file_content: str, old_text: str, new_text: str, file_path: str, custom_instructions: str = None) -> Optional[str]:
         """Generate updated document content using ChatGPT"""
-        
+
         try:
-            import openai
-            client = openai.OpenAI(api_key=self.api_key)
+            # Use the client initialized in __init__
+            client = self.client
 
             # Build custom instructions text
             if custom_instructions and custom_instructions.strip():
@@ -3358,16 +3364,19 @@ class AIManager:
 
             # Anthropic/Claude
             elif provider_name in ['claude', 'anthropic']:
-                api_key = config.get('ANTHROPIC_API_KEY', '')
+                # Try both CLAUDE_API_KEY and ANTHROPIC_API_KEY for compatibility
+                api_key = config.get('CLAUDE_API_KEY', '')
                 if not api_key:
-                    return "Error: Anthropic API key not configured"
+                    api_key = config.get('ANTHROPIC_API_KEY', '')
+                if not api_key:
+                    return "Error: Claude API key not configured (tried both CLAUDE_API_KEY and ANTHROPIC_API_KEY)"
 
                 try:
                     import anthropic
                     client = anthropic.Anthropic(api_key=api_key)
 
                     response = client.messages.create(
-                        model=config.get('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022'),
+                        model=config.get('ANTHROPIC_MODEL', 'claude-sonnet-4-5'),
                         max_tokens=2000,
                         messages=[
                             {"role": "user", "content": prompt}

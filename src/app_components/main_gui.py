@@ -104,6 +104,15 @@ class MainGUI:
         # Initialize logger
         self.logger = None  # Will be set after UI is created
 
+        # AI Action Plan state
+        self.current_action_plan = None
+        self.plan_display_ref = ft.Ref[ft.Column]()
+        self.plan_progress_ref = ft.Ref[ft.ProgressBar]()
+        self.plan_status_ref = ft.Ref[ft.Text]()
+        self.execute_plan_button_ref = ft.Ref[ft.ElevatedButton]()
+        self.generate_plan_button_ref = ft.Ref[ft.ElevatedButton]()
+        self.ai_instructions_ref = ft.Ref[ft.TextField]()
+
         # Register settings change listener for live updates
         self.config_manager.register_listener(self._on_settings_changed)
 
@@ -456,6 +465,11 @@ class MainGUI:
                     text="View Diff",
                     icon=ft.icons.DIFFERENCE,
                     content=self._create_diff_tab()
+                ),
+                ft.Tab(
+                    text="AI Action Plan",
+                    icon=ft.icons.AUTO_AWESOME,
+                    content=self._create_ai_plan_tab()
                 ),
             ],
             expand=True,
@@ -1537,6 +1551,10 @@ Description:
 
         # Store the active item
         self.active_workflow_item = item
+
+        # Enable the Generate Plan button when an item is selected
+        if self.generate_plan_button_ref.current:
+            self.generate_plan_button_ref.current.disabled = False
 
         # Determine display labels
         repo_label = "Target" if item.repo_source == "target" else "Fork"
@@ -2682,6 +2700,409 @@ Description:
         if self.diff_text_ref.current:
             self.diff_text_ref.current.value = diff_content
             self.page.update()
+
+    def _create_ai_plan_tab(self) -> ft.Container:
+        """Create the AI Action Plan tab"""
+
+        # Plan display area (initially empty)
+        plan_display = ft.Column(
+            ref=self.plan_display_ref,
+            controls=[
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.AUTO_AWESOME, size=64, color=ft.colors.BLUE_400),
+                        ft.Text(
+                            "AI Action Plan",
+                            size=24,
+                            weight=ft.FontWeight.BOLD,
+                            color=ft.colors.BLUE_400,
+                        ),
+                        ft.Text(
+                            "Select a PR or Issue and generate an AI action plan",
+                            size=14,
+                            color=ft.colors.GREY_600,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    alignment=ft.alignment.center,
+                    expand=True,
+                )
+            ],
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+        # AI Instructions input
+        ai_instructions = ft.TextField(
+            ref=self.ai_instructions_ref,
+            label="Additional Instructions (Optional)",
+            hint_text="Add any specific requirements or context for the AI...",
+            multiline=True,
+            min_lines=2,
+            max_lines=4,
+        )
+
+        # Buttons row
+        buttons_row = ft.Row(
+            [
+                ft.ElevatedButton(
+                    ref=self.generate_plan_button_ref,
+                    text="Generate Plan",
+                    icon=ft.icons.PSYCHOLOGY,
+                    on_click=self._on_generate_plan_click,
+                    disabled=True,  # Enable when item is selected
+                ),
+                ft.ElevatedButton(
+                    ref=self.execute_plan_button_ref,
+                    text="Execute Plan",
+                    icon=ft.icons.PLAY_ARROW,
+                    on_click=self._on_execute_plan_click,
+                    disabled=True,  # Enable when plan is generated
+                    style=ft.ButtonStyle(
+                        color=ft.colors.WHITE,
+                        bgcolor=ft.colors.GREEN_700,
+                    ),
+                ),
+            ],
+            spacing=10,
+        )
+
+        # Progress bar (indeterminate/animated when visible)
+        progress_bar = ft.ProgressBar(
+            ref=self.plan_progress_ref,
+            visible=False,
+            color=ft.colors.BLUE_400,
+            bgcolor=ft.colors.BLUE_GREY_800,
+        )
+
+        # Status text
+        status_text = ft.Text(
+            ref=self.plan_status_ref,
+            value="",
+            color=ft.colors.BLUE_400,
+            size=12,
+        )
+
+        # Main layout
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ai_instructions,
+                    buttons_row,
+                    progress_bar,
+                    status_text,
+                    ft.Divider(),
+                    plan_display,
+                ],
+                spacing=10,
+                expand=True,
+            ),
+            padding=20,
+            expand=True,
+        )
+
+    def _on_generate_plan_click(self, e):
+        """Generate AI action plan for current item"""
+        if not self.active_workflow_item:
+            self._show_snackbar("Please select a PR or Issue first", error=True)
+            return
+
+        # Run in thread to avoid blocking UI
+        import threading
+        thread = threading.Thread(target=self._generate_plan_async)
+        thread.start()
+
+    def _generate_plan_async(self):
+        """Generate plan asynchronously"""
+        try:
+            # Update UI - disable both buttons during generation
+            if self.generate_plan_button_ref.current:
+                self.generate_plan_button_ref.current.disabled = True
+            if self.execute_plan_button_ref.current:
+                self.execute_plan_button_ref.current.disabled = True
+            if self.plan_status_ref.current:
+                self.plan_status_ref.current.value = "🤖 Generating action plan..."
+            if self.plan_progress_ref.current:
+                self.plan_progress_ref.current.visible = True
+            self.page.update()
+
+            # Create action planner
+            from .ai_action_planner import AIActionPlanner
+            planner = AIActionPlanner(self.ai_manager, self.logger, self.config_manager)
+
+            # Get custom instructions
+            custom_instructions = ""
+            if self.ai_instructions_ref.current:
+                custom_instructions = self.ai_instructions_ref.current.value or ""
+
+            # Generate plan
+            plan = planner.generate_plan(self.active_workflow_item, custom_instructions)
+
+            if plan:
+                self.current_action_plan = plan
+                self._display_action_plan(plan)
+
+                if self.plan_status_ref.current:
+                    self.plan_status_ref.current.value = f"✅ Plan generated with {len(plan.steps)} steps"
+                if self.execute_plan_button_ref.current:
+                    self.execute_plan_button_ref.current.disabled = False
+            else:
+                if self.plan_status_ref.current:
+                    self.plan_status_ref.current.value = "❌ Failed to generate plan"
+
+        except Exception as ex:
+            import traceback
+            self.logger.log(f"❌ Error generating plan: {str(ex)}")
+            self.logger.log(f"❌ Traceback: {traceback.format_exc()}")
+            if self.plan_status_ref.current:
+                self.plan_status_ref.current.value = f"❌ Error: {str(ex)}"
+
+        finally:
+            # Re-enable Generate Plan button
+            if self.generate_plan_button_ref.current:
+                self.generate_plan_button_ref.current.disabled = False
+            # Only enable Execute Plan if we have a valid plan
+            if self.execute_plan_button_ref.current and self.current_action_plan:
+                self.execute_plan_button_ref.current.disabled = False
+            if self.plan_progress_ref.current:
+                self.plan_progress_ref.current.visible = False
+            self.page.update()
+
+    def _display_action_plan(self, plan):
+        """Display the generated action plan"""
+        if not self.plan_display_ref.current:
+            return
+
+        steps_widgets = []
+
+        # Plan header
+        steps_widgets.append(
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(plan.title, size=18, weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        f"Context: {plan.context.get('item_type', 'unknown').upper()} #{plan.context.get('item_number', '?')}",
+                        size=12,
+                        color=ft.colors.GREY_600
+                    ),
+                ]),
+                padding=10,
+                bgcolor=ft.colors.BLUE_GREY_900,
+                border_radius=5,
+            )
+        )
+
+        # Individual steps
+        for step in plan.steps:
+            step_num = step['step_number']
+            description = step['description']
+            file_path = step.get('file_path', 'N/A')
+            action_type = step.get('action_type', 'unknown')
+            status = step.get('status', 'pending')
+
+            # Status icon and color based on step status
+            if status == 'completed':
+                icon = ft.icons.CHECK_CIRCLE
+                icon_color = ft.colors.GREEN
+                bg_color = None  # No special background
+            elif status == 'failed':
+                icon = ft.icons.ERROR
+                icon_color = ft.colors.RED
+                bg_color = None
+            elif status == 'in_progress':
+                icon = ft.icons.TIMELAPSE  # Animated-looking icon
+                icon_color = ft.colors.BLUE_400
+                bg_color = ft.colors.BLUE_GREY_800  # Highlight in-progress steps
+            else:  # pending
+                icon = ft.icons.RADIO_BUTTON_UNCHECKED
+                icon_color = ft.colors.GREY
+                bg_color = None
+
+            step_widget = ft.Container(
+                content=ft.Row([
+                    ft.Icon(icon, color=icon_color, size=20),
+                    ft.Column([
+                        ft.Text(f"Step {step_num}: {description}", weight=ft.FontWeight.BOLD, size=14),
+                        ft.Text(f"Action: {action_type}", size=11, color=ft.colors.BLUE_400),
+                        ft.Text(f"File: {file_path}", size=11, color=ft.colors.GREY_600) if file_path != 'N/A' else ft.Container(),
+                    ], spacing=2, expand=True),
+                ], spacing=10),
+                padding=10,
+                border=ft.border.all(1, ft.colors.GREY_700),
+                border_radius=5,
+                bgcolor=bg_color,  # Highlight in-progress steps
+            )
+            steps_widgets.append(step_widget)
+
+        # Update display
+        self.plan_display_ref.current.controls = steps_widgets
+        self.page.update()
+
+    def _on_execute_plan_click(self, e):
+        """Execute the current action plan"""
+        if not self.current_action_plan:
+            self._show_snackbar("No plan to execute", error=True)
+            return
+
+        # Run in thread
+        import threading
+        thread = threading.Thread(target=self._execute_plan_async)
+        thread.start()
+
+    def _execute_plan_async(self):
+        """Execute plan asynchronously"""
+        try:
+            self.logger.log("🔧 Starting _execute_plan_async...")
+
+            # Update UI - disable both buttons during execution
+            if self.execute_plan_button_ref.current:
+                self.execute_plan_button_ref.current.disabled = True
+            if self.generate_plan_button_ref.current:
+                self.generate_plan_button_ref.current.disabled = True
+            if self.plan_status_ref.current:
+                self.plan_status_ref.current.value = "▶️ Executing plan..."
+            if self.plan_progress_ref.current:
+                self.plan_progress_ref.current.visible = True
+            self.page.update()
+
+            # Get local repo path
+            config = self.config_manager.get_config()
+            local_repo_path = config.get('LOCAL_REPO_PATH', '')
+            self.logger.log(f"🔧 Local repo path: {local_repo_path}")
+
+            if not local_repo_path:
+                self.logger.log("❌ LOCAL_REPO_PATH is not set")
+                self._show_snackbar("Please set LOCAL_REPO_PATH in settings", error=True)
+                if self.plan_status_ref.current:
+                    self.plan_status_ref.current.value = "❌ LOCAL_REPO_PATH not set in settings"
+                    self.page.update()
+                return
+
+            # Create action planner
+            from .ai_action_planner import AIActionPlanner
+            planner = AIActionPlanner(self.ai_manager, self.logger, self.config_manager)
+            self.logger.log(f"🔧 Created AIActionPlanner, about to execute plan with {len(self.current_action_plan.steps)} steps")
+
+            # Execute with progress callback
+            def progress_callback(current, total, message):
+                if self.plan_status_ref.current:
+                    self.plan_status_ref.current.value = f"▶️ {message} ({current}/{total})"
+                # Update the plan display in real-time to show progress
+                if self.current_action_plan:
+                    self._display_action_plan(self.current_action_plan)
+                self.page.update()
+
+            # Execute with logging callback for thought process
+            def log_callback(message):
+                # Log to the processing log
+                self.logger.log(message)
+                # Also show in status if it's important
+                if any(keyword in message for keyword in ["🤖", "✅", "❌", "📝", "🔍"]):
+                    if self.plan_status_ref.current:
+                        self.plan_status_ref.current.value = message
+                    self.page.update()
+
+            result = planner.execute_plan(
+                self.current_action_plan,
+                local_repo_path,
+                progress_callback,
+                log_callback
+            )
+
+            self.logger.log(f"🔧 execute_plan returned: {result}")
+
+            # Update display
+            self._display_action_plan(self.current_action_plan)
+
+            # Show completion dialog
+            if result['success']:
+                self._show_completion_dialog(result)
+            else:
+                if self.plan_status_ref.current:
+                    self.plan_status_ref.current.value = f"⚠️ Plan completed with errors: {result['failed']}/{result['total']} steps failed"
+
+        except Exception as ex:
+            import traceback
+            self.logger.log(f"❌ Error executing plan: {str(ex)}")
+            self.logger.log(f"❌ Traceback: {traceback.format_exc()}")
+            if self.plan_status_ref.current:
+                self.plan_status_ref.current.value = f"❌ Error: {str(ex)}"
+
+        finally:
+            # Re-enable both buttons after execution
+            if self.execute_plan_button_ref.current:
+                self.execute_plan_button_ref.current.disabled = False
+            if self.generate_plan_button_ref.current:
+                self.generate_plan_button_ref.current.disabled = False
+            if self.plan_progress_ref.current:
+                self.plan_progress_ref.current.visible = False
+            self.page.update()
+
+    def _show_completion_dialog(self, result):
+        """Show dialog after plan execution with options to push/create PR"""
+        context = self.current_action_plan.context
+        item_type = context.get('item_type', 'unknown')
+        item_number = context.get('item_number', '?')
+
+        def close_dialog(e):
+            dialog.open = False
+            self.page.update()
+
+        def push_changes(e):
+            dialog.open = False
+            self.page.update()
+            self._push_changes_async()
+
+        def create_pr(e):
+            dialog.open = False
+            self.page.update()
+            self._create_pr_from_plan_async()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("✅ Plan Execution Complete!"),
+            content=ft.Column([
+                ft.Text(f"Successfully completed {result['completed']}/{result['total']} steps"),
+                ft.Divider(),
+                ft.Text("What would you like to do next?", weight=ft.FontWeight.BOLD),
+                ft.Text(f"• Push changes to the {item_type} branch", size=12),
+                ft.Text(f"• Create/Update PR for these changes", size=12),
+                ft.Text(f"• Review changes manually", size=12),
+            ], tight=True, spacing=10),
+            actions=[
+                ft.TextButton("Review Later", on_click=close_dialog),
+                ft.ElevatedButton(
+                    "Push Changes",
+                    icon=ft.icons.CLOUD_UPLOAD,
+                    on_click=push_changes,
+                ),
+                ft.ElevatedButton(
+                    "Create/Update PR",
+                    icon=ft.icons.MERGE_TYPE,
+                    on_click=create_pr,
+                    style=ft.ButtonStyle(bgcolor=ft.colors.GREEN_700),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def _push_changes_async(self):
+        """Push changes to git repository"""
+        # This will be implemented to push changes
+        self.logger.log("🚀 Pushing changes to repository...")
+        # TODO: Implement git push logic
+        self._show_snackbar("Push functionality coming soon!")
+
+    def _create_pr_from_plan_async(self):
+        """Create or update PR from executed plan"""
+        # This will be implemented to create/update PR
+        self.logger.log("📝 Creating/updating PR...")
+        # TODO: Implement PR creation logic
+        self._show_snackbar("PR creation functionality coming soon!")
 
 
 class Logger:

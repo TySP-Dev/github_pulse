@@ -771,6 +771,7 @@ class SettingsDialog:
             if not path_str:
                 path_str = str(Path.home() / "Downloads" / "github_repos")
 
+            print(f"🔍 Scanning for repos in: {path_str}")
             base_path = Path(path_str)
 
             if not base_path.exists():
@@ -783,26 +784,70 @@ class SettingsDialog:
             # Scan for git repositories
             repos = []
             try:
-                for owner_dir in base_path.iterdir():
-                    if not owner_dir.is_dir():
+                # First, check if repos are directly in the base path (flat structure)
+                for item in base_path.iterdir():
+                    if not item.is_dir():
                         continue
 
-                    for repo_dir in owner_dir.iterdir():
-                        if not repo_dir.is_dir():
-                            continue
+                    git_dir = item / ".git"
+                    if git_dir.exists():
+                        # This is a git repo directly in the base path
+                        # Try to get the remote origin to get owner/repo format
+                        try:
+                            import subprocess
+                            result = subprocess.run(
+                                ['git', 'config', '--get', 'remote.origin.url'],
+                                cwd=str(item),
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
 
-                        git_dir = repo_dir / ".git"
-                        if git_dir.exists():
-                            repo_name = f"{owner_dir.name}/{repo_dir.name}"
-                            repos.append(repo_name)
+                            if result.returncode == 0:
+                                url = result.stdout.strip()
+                                # Parse GitHub URL to get owner/repo
+                                if 'github.com' in url:
+                                    # Handle both HTTPS and SSH URLs
+                                    if url.startswith('https://'):
+                                        # https://github.com/owner/repo.git
+                                        parts = url.replace('https://github.com/', '').replace('.git', '').split('/')
+                                        if len(parts) >= 2:
+                                            repo_name = f"{parts[0]}/{parts[1]}"
+                                            repos.append(repo_name)
+                                            continue
+                                    elif url.startswith('git@'):
+                                        # git@github.com:owner/repo.git
+                                        parts = url.replace('git@github.com:', '').replace('.git', '').split('/')
+                                        if len(parts) >= 2:
+                                            repo_name = f"{parts[0]}/{parts[1]}"
+                                            repos.append(repo_name)
+                                            continue
+                        except:
+                            pass
+
+                        # Fallback: use directory name
+                        repos.append(f"local/{item.name}")
+                    else:
+                        # Check if this is an owner directory with repos inside (nested structure)
+                        for repo_dir in item.iterdir():
+                            if not repo_dir.is_dir():
+                                continue
+
+                            git_dir = repo_dir / ".git"
+                            if git_dir.exists():
+                                repo_name = f"{item.name}/{repo_dir.name}"
+                                repos.append(repo_name)
 
             except Exception as e:
                 print(f"Error scanning repos: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Update dropdown
             if self.detected_repos_dropdown_ref.current:
                 if repos:
                     repos.sort()
+                    print(f"✅ Found {len(repos)} repo(s): {', '.join(repos)}")
                     self.detected_repos_dropdown_ref.current.options = [
                         ft.dropdown.Option(repo) for repo in repos
                     ]
@@ -811,6 +856,7 @@ class SettingsDialog:
                     else:
                         self.detected_repos_dropdown_ref.current.value = f'{len(repos)} repo(s) found - select one'
                 else:
+                    print(f"❌ No git repositories found in {path_str}")
                     self.detected_repos_dropdown_ref.current.value = 'No git repositories found'
                     self.detected_repos_dropdown_ref.current.options = []
 

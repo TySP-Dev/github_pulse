@@ -3,6 +3,10 @@ GitHub Pulse
 Main application entry point
 
 This application provides GitHub automation workflows with AI assistance.
+
+Note: You may see a Flutter engine warning when closing the app:
+  "embedder.cc (2519): 'FlutterEngineRemoveView' returned 'kInvalidArguments'"
+This is a harmless known issue with Flet/Flutter and can be safely ignored.
 """
 
 import sys

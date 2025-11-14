@@ -30,6 +30,7 @@ from .settings_dialog import SettingsDialog
 from .main_gui import MainGUI
 from .utils import Logger, PRNumberManager, ContentBuilders
 from .workflow import WorkflowManager, WorkflowItem, GitHubRepoFetcher
+from .ai_action_planner import AIActionPlanner, ActionPlan
 
 __all__ = [
     'ConfigManager',
@@ -43,6 +44,8 @@ __all__ = [
     'WorkflowManager',
     'WorkflowItem',
     'GitHubRepoFetcher',
+    'AIActionPlanner',
+    'ActionPlan',
     '__version__',
     '__author__',
     '__app_name__',
