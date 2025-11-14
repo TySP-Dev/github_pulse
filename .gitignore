@@ -189,7 +189,7 @@ windows/
 web/
 .flet
 build/
-pyproject.toml
+*.toml
 
 # Configuration (generated during build, not in git)
 # Note: pyproject.toml is now tracked for proper builds
