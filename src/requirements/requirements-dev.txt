@@ -1,0 +1,12 @@
+# Development requirements
+# Includes all dependencies for development, testing, and building
+
+# Include AI requirements (which includes base)
+-r requirements-ai.txt
+
+# Development tools
+flet[all]==0.28.3   # Flet with all development extras
+
+# Build tools (optional)
+# pyinstaller>=6.0.0  # Alternative bundler if needed
+# cx-Freeze>=6.15.0   # Alternative bundler if needed

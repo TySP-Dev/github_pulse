@@ -17,11 +17,16 @@ A Python-based GUI application for GitHub automation workflows and AI assisted w
 ```text
 github_pulse/
 ├── src/             # Main application directory
-│   ├── app.py               # Application entry point
+│   ├── main.py               # Application entry point
 │   ├── requirements.txt     # Python dependencies
-│   ├── assets               # Images for build
+│   ├── assets/               # Images for build
 │   │   ├── icon.png         # Application icon
 │   │   └── splash_android.png # Splash screen image
+│   ├── requirements/  
+│   │   ├── requirements-dev.txt  # Development dependencies
+│   │   ├── requirements-ai.txt  # AI dependencies
+│   │   ├── requirements.txt  # Production dependencies
+│   │   └── requirements-base.txt  # Base dependencies
 │   └── app_components/      # Application modules
 │       ├── assets/          # Images and assets
 │       │   ├── flow-diagram.png              # Workflow diagram              
@@ -56,12 +61,14 @@ github_pulse/
 ## Quick Start
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/TySP-Dev/github_pulse.git
    cd github_pulse/src
    ```
 
 2. **Create and activate virtual environment**
+
    ```bash
    # Create virtual environment
    python -m venv venv
@@ -74,11 +81,29 @@ github_pulse/
    ```
 
 3. **Install dependencies**
+
    ```bash
-   pip install -r requirements.txt
+   # For all production dependencies
+   pip install -r requirements/requirements.txt
+   ```
+
+   ```bash
+   # For dev dependencies
+   pip install -r requirements/requirements-dev.txt
+   ```
+
+   ```bash
+   # For ai dependencies
+   pip install -r requirements/requirements-ai.txt
+   ```
+
+   ```bash
+   # For base dependencies
+   pip install -r requirements/requirements-base.txt
    ```
 
 4. **Run the application**
+
    ```bash
    python app.py
    ```

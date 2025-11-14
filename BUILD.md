@@ -1,5 +1,9 @@
 # Build Instructions
 
+> [!NOTE]
+> Building has only been tested for **linux**.
+> Please report bugs with building on any other platform.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18+)
@@ -39,7 +43,8 @@ source venv/bin/activate
 ## Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+# For dev dependencies
+pip install -r requirements/requirements-dev.txt
 ```
 
 ```bash

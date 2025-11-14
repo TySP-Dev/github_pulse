@@ -161,10 +161,35 @@ cython_debug/
 
 # Flet
 storage/
+.flet/
 
-# Build
+# Build artifacts
 build/
-pyproject.toml
+dist/
+src/build/
+src/dist/
+*.apk
+*.ipa
+*.app
+*.exe
+*.dmg
+*.deb
+*.rpm
+*.tar.gz
 
-# Config
+# Flutter/Flet build artifacts
+.flutter-plugins
+.flutter-plugins-dependencies
+.dart_tool/
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+
+# Configuration (generated during build, not in git)
+# Note: pyproject.toml is now tracked for proper builds
+# config.json should be user-specific
 config.json
+src/config.json

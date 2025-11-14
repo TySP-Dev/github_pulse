@@ -1,0 +1,59 @@
+# Flet Build Configuration
+# This file provides additional build settings for the Flet application
+
+# App metadata
+[app]
+name = "GitHub Pulse"
+description = "GitHub automation workflows with AI assistance"
+author = "TySP-Dev"
+
+# Build settings
+[build]
+# Include these files/directories in the build
+include_packages = [
+    "app_components",
+    "assets"
+]
+
+# Exclude unnecessary files from build
+exclude = [
+    "*.pyc",
+    "__pycache__",
+    "*.pyo",
+    "*.pyd",
+    ".git",
+    ".gitignore",
+    "venv",
+    ".env",
+    "*.md",
+    "BUILD.md",
+    "SETUP.md",
+    "*.example"
+]
+
+# Asset optimization
+[assets]
+# Optimize images during build
+optimize_images = true
+# Include app_components/assets directory
+directories = [
+    "assets",
+    "app_components/assets"
+]
+
+# Platform-specific settings
+[android]
+adaptive_icon_background = "#1976D2"
+adaptive_icon_foreground = "assets/icon.png"
+
+[ios]
+info_plist_version = "1.0"
+
+[macos]
+info_plist_version = "1.0"
+
+[windows]
+console = false  # Hide console window in production
+
+[linux]
+categories = ["Development", "Utility"]

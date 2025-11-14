@@ -6,7 +6,9 @@ This application provides GitHub automation workflows with AI assistance.
 """
 
 import sys
+import os
 import flet as ft
+
 # Compatibility fix for Flet 0.28+ (Icons vs icons, Colors vs colors)
 ft.icons = ft.Icons
 ft.colors = ft.Colors
@@ -20,6 +22,11 @@ try:
 except ImportError as e:
     print(f"Error importing application components: {e}")
     print("Make sure all files are present in the app_components folder")
+    # In production builds, show a user-friendly error
+    if getattr(sys, 'frozen', False):
+        import traceback
+        error_details = traceback.format_exc()
+        print(error_details)
     sys.exit(1)
 
 
@@ -35,13 +42,18 @@ class GitHubAutomationApp:
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.padding = 0
 
-        # Set window size
-        self.page.window_width = 1400
-        self.page.window_height = 1000
-        self.page.window_min_width = 1200
-        self.page.window_min_height = 800
+        # Set window size with platform detection
+        # Mobile devices will use full screen
+        is_mobile = page.web or (hasattr(page, 'platform') and
+                                 page.platform in ['android', 'ios'])
 
-        # Material Design 3 theme
+        if not is_mobile:
+            self.page.window_width = 1400
+            self.page.window_height = 1000
+            self.page.window_min_width = 1200
+            self.page.window_min_height = 800
+
+        # Material Design 3 theme with optimized settings
         self.page.theme = ft.Theme(
             color_scheme_seed="blue",
             use_material3=True,
@@ -183,5 +195,20 @@ async def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    # Run the Flet app
-    ft.app(target=main)
+    # Run the Flet app with optimized settings
+    # For production builds, use appropriate view settings
+    is_production = getattr(sys, 'frozen', False)
+
+    if is_production:
+        # Production build settings
+        ft.app(
+            target=main,
+            view=ft.AppView.FLET_APP,  # Native app view for builds
+            assets_dir="assets"  # Ensure assets are loaded correctly
+        )
+    else:
+        # Development settings
+        ft.app(
+            target=main,
+            assets_dir="assets"
+        )

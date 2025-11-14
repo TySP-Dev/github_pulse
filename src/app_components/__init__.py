@@ -3,9 +3,24 @@ GitHub Pulse - Application Components
 Modular components for the application
 """
 
+import sys
+import os
+
 # Version info
-__version__ = "1.0.0"
-__author__ = "GitHub Pulse"
+__version__ = "0.0.1"
+__author__ = "TySP-Dev"
+__app_name__ = "GitHub Pulse"
+
+# Determine if running in production build
+IS_PRODUCTION = getattr(sys, 'frozen', False)
+
+# Get the application directory
+if IS_PRODUCTION:
+    # In production build, get the executable directory
+    APP_DIR = os.path.dirname(sys.executable)
+else:
+    # In development, get the source directory
+    APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Export main classes for easier imports
 from .config_manager import ConfigManager
@@ -27,5 +42,10 @@ __all__ = [
     'ContentBuilders',
     'WorkflowManager',
     'WorkflowItem',
-    'GitHubRepoFetcher'
+    'GitHubRepoFetcher',
+    '__version__',
+    '__author__',
+    '__app_name__',
+    'IS_PRODUCTION',
+    'APP_DIR'
 ]
